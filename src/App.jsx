@@ -62,30 +62,60 @@ export default function App() {
 
   useEffect(() => {
     const ctx = gsap.context(() => {
-      gsap.from('.hero-shelf-stage', { scale: 0.94, opacity: 0, duration: 1.25, ease: 'power3.out' })
-      gsap.utils.toArray('.reveal').forEach((item) => gsap.from(item, { scrollTrigger: { trigger: item, start: 'top 83%' }, y: 32, opacity: 0, duration: 0.8, ease: 'power3.out' }))
-      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        gsap.to('.shelf-product--collagen img', { y: -18, rotation: -3, duration: 3.9, ease: 'sine.inOut', repeat: -1, yoyo: true })
-        gsap.to('.shelf-product--magnesium img', { y: 16, rotation: 4, duration: 4.7, delay: 0.4, ease: 'sine.inOut', repeat: -1, yoyo: true })
-        gsap.to('.shelf-product--wellwoman img', { y: -13, rotation: -2, duration: 4.3, delay: 0.8, ease: 'sine.inOut', repeat: -1, yoyo: true })
-        gsap.to('.shelf-product--anua img', { y: 17, rotation: 5, duration: 3.6, delay: 0.3, ease: 'sine.inOut', repeat: -1, yoyo: true })
-        gsap.to('.shelf-ring-a', { rotation: 340, duration: 26, ease: 'none', repeat: -1 })
-        gsap.to('.shelf-ring-b', { rotation: -330, duration: 32, ease: 'none', repeat: -1 })
-        gsap.to('.shelf-aurora', { scale: 1.08, opacity: 0.78, duration: 4.5, ease: 'sine.inOut', repeat: -1, yoyo: true })
-        gsap.to('.hero-atmosphere .atmosphere-a', { xPercent: 12, yPercent: -9, scale: 1.12, duration: 9, ease: 'sine.inOut', repeat: -1, yoyo: true })
-        gsap.to('.hero-atmosphere .atmosphere-b', { xPercent: -13, yPercent: 9, scale: 1.08, duration: 11, ease: 'sine.inOut', repeat: -1, yoyo: true })
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
-        if (window.innerWidth > 760) {
-          const scatteredSlots = gsap.utils.shuffle([
-            { left: '5%', top: '10%', rotation: -7 },
-            { left: '69%', top: '9%', rotation: 6 },
-            { left: '7%', top: '57%', rotation: -5 },
-            { left: '70%', top: '58%', rotation: 7 },
-          ])
-          const shelfProducts = gsap.utils.toArray('.shelf-product')
-          shelfProducts.forEach((product, index) => gsap.set(product, { ...scatteredSlots[index], right: 'auto', bottom: 'auto', transformOrigin: '50% 65%' }))
-        }
+      // Sections rise into view; the items inside them follow one after another.
+      gsap.utils.toArray('.reveal').forEach((item) => gsap.from(item, { scrollTrigger: { trigger: item, start: 'top 88%' }, y: 80, opacity: 0, duration: 1.1, ease: 'power4.out' }))
+      const staggered = [
+        ['.io-worlds', ':scope > article', { y: 90 }],
+        ['.concern-list', ':scope > button', { x: -40, y: 0 }],
+        ['.product-rail', ':scope > article', { x: 140, y: 0 }],
+        ['.age-switcher', ':scope > button', { y: 30 }],
+        ['.edit-brands', ':scope > span', { y: 40 }],
+      ]
+      staggered.forEach(([group, children, from]) => {
+        const node = document.querySelector(group)
+        if (!node) return
+        gsap.from(node.querySelectorAll(children), { scrollTrigger: { trigger: node, start: 'top 85%' }, opacity: 0, duration: 0.9, ease: 'power3.out', stagger: 0.09, ...from })
+      })
+      gsap.fromTo('.real-image img', { scale: 1.18 }, { scale: 1, ease: 'none', scrollTrigger: { trigger: '.real-section', start: 'top bottom', end: 'bottom top', scrub: true } })
+
+      // Desktop: the four products start in a random scatter around the headline.
+      if (window.innerWidth > 760) {
+        const scatteredSlots = gsap.utils.shuffle([
+          { left: '5%', top: '10%', rotation: -7 },
+          { left: '69%', top: '9%', rotation: 6 },
+          { left: '7%', top: '57%', rotation: -5 },
+          { left: '70%', top: '58%', rotation: 7 },
+        ])
+        const shelfProducts = gsap.utils.toArray('.shelf-product')
+        shelfProducts.forEach((product, index) => gsap.set(product, { ...scatteredSlots[index], right: 'auto', bottom: 'auto', transformOrigin: '50% 65%' }))
       }
+
+      // Opening: headline, text and buttons rise in turn; the products pop in.
+      gsap.from('.hero-shelf-stage', { scale: 0.94, opacity: 0, duration: 1.25, ease: 'power3.out' })
+      gsap.from('.hero-intro-copy > *', { y: 50, opacity: 0, duration: 1, ease: 'power4.out', stagger: 0.12, delay: 0.15 })
+      gsap.from('.shelf-product', { scale: 0.4, opacity: 0, duration: 1.1, ease: 'back.out(1.6)', stagger: 0.14, delay: 0.35 })
+
+      // Scrolling away from the top: products drift at different speeds and tilt, the headline lifts and fades.
+      const heroScroll = { trigger: '.matrix-shelf-hero', start: 'top top', end: () => `+=${window.innerHeight}`, scrub: 0.6 }
+      ;[['collagen', -160, -12], ['magnesium', -240, 10], ['wellwoman', -90, -8], ['anua', -200, 14]].forEach(([id, y, rotation]) => {
+        gsap.to(`.shelf-product--${id}`, { y, rotation, ease: 'none', scrollTrigger: heroScroll })
+      })
+      // .hero-copy is centred with a CSS transform, so it only fades; the inner block does the lifting.
+      gsap.to('.hero-copy', { opacity: 0.15, ease: 'none', scrollTrigger: heroScroll })
+      gsap.to('.hero-intro-copy', { yPercent: -22, ease: 'none', scrollTrigger: heroScroll })
+
+      // Always moving: products float, rings turn, the background glow drifts.
+      gsap.to('.shelf-product--collagen img', { y: -30, rotation: -5, duration: 3.9, ease: 'sine.inOut', repeat: -1, yoyo: true })
+      gsap.to('.shelf-product--magnesium img', { y: 28, rotation: 6, duration: 4.7, delay: 0.4, ease: 'sine.inOut', repeat: -1, yoyo: true })
+      gsap.to('.shelf-product--wellwoman img', { y: -24, rotation: -4, duration: 4.3, delay: 0.8, ease: 'sine.inOut', repeat: -1, yoyo: true })
+      gsap.to('.shelf-product--anua img', { y: 28, rotation: 7, duration: 3.6, delay: 0.3, ease: 'sine.inOut', repeat: -1, yoyo: true })
+      gsap.to('.shelf-ring-a', { rotation: 340, duration: 26, ease: 'none', repeat: -1 })
+      gsap.to('.shelf-ring-b', { rotation: -330, duration: 32, ease: 'none', repeat: -1 })
+      gsap.to('.shelf-aurora', { scale: 1.08, opacity: 0.78, duration: 4.5, ease: 'sine.inOut', repeat: -1, yoyo: true })
+      gsap.to('.hero-atmosphere .atmosphere-a', { xPercent: 12, yPercent: -9, scale: 1.12, duration: 9, ease: 'sine.inOut', repeat: -1, yoyo: true })
+      gsap.to('.hero-atmosphere .atmosphere-b', { xPercent: -13, yPercent: 9, scale: 1.08, duration: 11, ease: 'sine.inOut', repeat: -1, yoyo: true })
     }, app)
     return () => ctx.revert()
   }, [])
