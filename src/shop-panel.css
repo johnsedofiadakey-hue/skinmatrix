@@ -15,7 +15,7 @@
 .panel-top { display: flex; align-items: center; justify-content: space-between; padding-bottom: 32px; border-bottom: 1px solid var(--line); }
 .panel-close { width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 50%; background: transparent; font-size: 25px; font-weight: 300; line-height: 1; }
 .shop-title { margin: 55px 0 28px; }
-.shop-title h2, .bag-view h2 { font: 500 clamp(52px, 6vw, 82px)/.87 'Bodoni Moda', serif; letter-spacing: -.07em; }
+.shop-title h2, .bag-view h2 { font: 500 clamp(52px, 6vw, 82px)/.87 'Outfit', sans-serif; letter-spacing:-.04em; }
 .shop-title p { margin-top: 18px; max-width: 230px; color: #5e5e7b; font-size: 13px; line-height: 1.6; }
 .shop-filters { display: flex; gap: 7px; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
 .shop-filters button { padding: 9px 13px; border: 1px solid var(--line); border-radius: 99px; background: transparent; font: 500 10px 'DM Mono', monospace; text-transform: uppercase; letter-spacing: .07em; }
@@ -26,13 +26,13 @@
 .shop-product-art { position: relative; height: 150px; overflow: hidden; }
 .shop-product-art .product-object { inset: 7px 0 0; width: 100%; height: 135px; transform: scale(.8); transform-origin: center bottom; }
 .shop-products span, .bag-item span { display: block; margin-top: 9px; color: #6a6988; font: 9px 'DM Mono', monospace; text-transform: uppercase; letter-spacing: .07em; }
-.shop-products h3 { margin: 7px 0; font: 500 20px/.95 'Bodoni Moda', serif; letter-spacing: -.05em; }
+.shop-products h3 { margin: 7px 0; font: 500 20px/.95 'Outfit', sans-serif; letter-spacing:-.03em; }
 .shop-products p { display: none; }
 .shop-products b { font-size: 11px; }
 .quick-product { display: grid; grid-template-columns: .8fr 1fr; min-height: 310px; margin-top: 28px; padding: 25px; background: var(--ink); color: white; }
 .quick-product .product-object { position: relative; top: auto; right: auto; width: 100%; height: 220px; transform: scale(.75); transform-origin: left center; }
 .quick-product > div:last-child { align-self: center; }
-.quick-product h3 { margin: 14px 0 10px; font: 500 37px/.9 'Bodoni Moda', serif; letter-spacing: -.07em; }
+.quick-product h3 { margin: 14px 0 10px; font: 500 37px/.9 'Outfit', sans-serif; letter-spacing:-.04em; }
 .quick-product p { color: #d4d1e7; font-size: 12px; line-height: 1.55; }
 .quick-product > div:last-child > div { display: flex; align-items: center; gap: 16px; margin-top: 20px; font-size: 12px; }
 .quick-product .button { padding: 12px 14px; }
@@ -41,7 +41,7 @@
 .bag-items { margin: 36px 0 20px; border-top: 1px solid var(--line); }
 .bag-item { display: grid; grid-template-columns: 105px 1fr auto; gap: 10px; align-items: center; min-height: 140px; border-bottom: 1px solid var(--line); }
 .bag-item .product-object { position: relative; top: auto; right: auto; width: 100px; height: 120px; transform: scale(.65); transform-origin: center; }
-.bag-item h3 { margin: 8px 0; font: 500 24px/.9 'Bodoni Moda', serif; letter-spacing: -.055em; }
+.bag-item h3 { margin: 8px 0; font: 500 24px/.9 'Outfit', sans-serif; letter-spacing:-.03em; }
 .bag-item p { font-size: 11px; color: #686781; }
 .bag-item > button { width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 50%; background: transparent; font-size: 16px; }
 .bag-total { display: flex; justify-content: space-between; padding: 18px 0; border-top: 1px solid var(--ink); font-size: 13px; }

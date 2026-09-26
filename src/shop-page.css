@@ -1,0 +1,54 @@
+/* /shop — the standalone shop page. */
+.shop-page { background: var(--ivory); min-height: 100svh; }
+
+.shop-page-hero { position: relative; overflow: hidden; padding: 150px 5.5vw 56px; color: #fff; text-align: center; background: radial-gradient(ellipse 60% 90% at 78% 0%, #4b3f86 0%, transparent 62%), radial-gradient(ellipse 50% 80% at 12% 100%, #5b2f63aa 0%, transparent 60%), var(--ink); }
+.shop-page-hero h1 { margin: 20px 0 16px; font-size: clamp(54px, 7vw, 104px); }
+.shop-page-hero h1 em { color: #f1d6e2; }
+.shop-page-hero p { max-width: 430px; margin: 0 auto; font-size: 15px; line-height: 1.55; color: #d5d4e8; }
+.shop-page-filters { display: inline-flex; gap: 6px; margin-top: 34px; padding: 5px; border: 1px solid #ffffff2e; border-radius: 100px; background: #ffffff0d; }
+.shop-page-filters button { min-height: 40px; padding: 0 20px; border: 0; border-radius: 100px; background: transparent; color: #fff; font-size: 13px; font-weight: 500; transition: background .2s, color .2s; }
+.shop-page-filters button:hover { background: #ffffff1a; }
+.shop-page-filters button.active { background: #fff; color: var(--ink); }
+
+.shop-page-body { max-width: 1240px; margin: 0 auto; padding: 44px 5.5vw 90px; }
+.shop-page-count { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 18px; margin-bottom: 26px; border-bottom: 1px solid var(--line); color: #5f5f82; }
+.shop-page-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 22px; }
+
+.shop-card { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 22px; background: #fff; transition: transform .35s cubic-bezier(.2,.8,.2,1), box-shadow .35s; }
+.shop-card:hover { transform: translateY(-6px); box-shadow: 0 24px 48px -28px #1d1d5059; }
+.shop-card-art { height: 300px; background: radial-gradient(circle at 50% 42%, #fff 0%, #f0e9ef 70%); }
+.shop-card.tone-magnesium .shop-card-art { background: radial-gradient(circle at 50% 42%, #fff 0%, #e8e4ef 70%); }
+.shop-card.tone-wellwoman .shop-card-art { background: radial-gradient(circle at 50% 42%, #fff 0%, #ece3f1 70%); }
+.shop-card.tone-anua .shop-card-art { background: radial-gradient(circle at 50% 42%, #fff 0%, #f5e8ea 70%); }
+.shop-card-art .brand-product-visual img { max-height: 80%; transition: transform .5s cubic-bezier(.2,.8,.2,1); }
+.shop-card:hover .shop-card-art img { transform: scale(1.05) rotate(-2deg); }
+.shop-card-copy { display: flex; flex: 1; flex-direction: column; padding: 22px 22px 24px; }
+.shop-card-copy .eyebrow { color: var(--lav); }
+.shop-card-copy h2 { margin: 12px 0 8px; font-size: 25px; font-weight: 500; line-height: 1.05; letter-spacing: -.025em; }
+.shop-card-copy p { font-size: 13px; line-height: 1.5; color: #5f5f82; }
+.shop-card-buy { display: grid; gap: 14px; margin-top: auto; padding-top: 22px; }
+.shop-card-buy b { font-size: 12px; font-weight: 500; color: #5f5f82; }
+.shop-card-buy .button { width: 100%; justify-content: space-between; border: 1px solid var(--ink); }
+.shop-card-buy .button.in-bag { background: #f1e8f4; color: var(--ink); border-color: #d9c6e4; }
+
+.shop-page-help { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 28px; max-width: 1240px; margin: 0 auto 90px; padding: 44px 5.5vw 0; border-top: 1px solid var(--line); }
+.shop-page-help h2 { margin-top: 16px; font-size: clamp(38px, 4.4vw, 62px); }
+
+@media (max-width: 760px) {
+  .shop-page-hero { padding: 116px 16px 40px; }
+  .shop-page-hero p { font-size: 14px; }
+  .shop-page-filters { margin-top: 26px; }
+  .shop-page-filters button { padding: 0 15px; }
+  .shop-page-body { padding: 28px 16px 64px; }
+  .shop-page-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .shop-card { border-radius: 16px; }
+  .shop-card-art { height: 180px; }
+  .shop-card-copy { padding: 14px 14px 16px; }
+  .shop-card-copy .eyebrow { font-size: 8px; }
+  .shop-card-copy h2 { margin: 8px 0 6px; font-size: 17px; }
+  .shop-card-copy p { font-size: 12px; }
+  .shop-card-buy { padding-top: 14px; gap: 10px; }
+  .shop-card-buy b { font-size: 11px; }
+  .shop-card-buy .button { padding: 12px; font-size: 11px; }
+  .shop-page-help { padding: 36px 16px 0; margin-bottom: 64px; }
+}

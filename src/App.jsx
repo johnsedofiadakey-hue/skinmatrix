@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import MatrixScene from './MatrixScene'
+import { Arrow, BagPanel, ProductVisual, SiteFooter, SiteHeader, products, useBag } from './storefront'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -15,13 +16,6 @@ const concerns = {
   "Women's Wellness": { eyebrow: 'Cycle + strength', line: 'Care tuned to every changing phase.', items: ['Magnesium', 'Iron Support', 'Evening Primrose', 'Omega 3'] },
   'Everyday Health': { eyebrow: 'The daily base', line: 'Small rituals make a resilient system.', items: ['Multivitamin', 'Vitamin D3', 'Probiotics', 'Omega 3'] },
 }
-
-const products = [
-  { no: '01', name: 'Collagen Beauty Builder', brand: 'NeoCell', category: 'Inside', type: 'Beauty support', note: 'Collagen · A.L.A. · biotin', price: 'Catalogue price coming soon', tone: 'neocell', image: '/assets/products/neocell-collagen-beauty-builder.png' },
-  { no: '02', name: 'Magnesium Glycinate', brand: 'NOW', category: 'Inside', type: 'Daily support', note: 'Magnesium glycinate · 180 tablets', price: 'Catalogue price coming soon', tone: 'magnesium', image: '/assets/products/now-magnesium-glycinate.png' },
-  { no: '03', name: 'Wellwoman 50+', brand: 'Vitabiotics', category: 'Inside', type: "Women's wellbeing", note: '26 nutrients · 50+', price: 'Catalogue price coming soon', tone: 'wellwoman', image: '/assets/products/wellwoman-50-plus.png' },
-  { no: '04', name: 'Niacinamide 10 + TXA 4 Serum', brand: 'Anua', category: 'On the surface', type: 'Targeted skincare', note: 'Niacinamide serum · 30 ml', price: 'Catalogue price coming soon', tone: 'anua', image: '/assets/products/anua-niacinamide-10-txa-4.png' },
-]
 
 const heroShelfProducts = [
   { id: 'collagen', product: products[0], label: 'Beauty support' },
@@ -43,20 +37,6 @@ const ingredients = [
   ['Vitamin C', 'Brighten + protect', 'C'], ['Collagen', 'Structure + strength', 'Co'], ['Hyaluronic Acid', 'Bind + hydrate', 'HA'], ['Biotin', 'Support + grow', 'B7'], ['Magnesium', 'Rest + restore', 'Mg'], ['Omega 3', 'Nourish + balance', 'Ω3'],
 ]
 
-function Arrow() { return <span aria-hidden="true">↗</span> }
-
-function ProductObject({ tone, large = false }) {
-  return <div className={`product-object ${tone} ${large ? 'large' : ''}`} aria-hidden="true">
-    <i className="orb orb-a" /><i className="orb orb-b" /><i className="capsule" />
-    <div className="bottle"><div className="bottle-cap" /><div className="bottle-label">SKIN<br />MATRIX</div></div>
-  </div>
-}
-
-function ProductVisual({ product, className = '' }) {
-  if (!product.image) return <ProductObject tone={product.tone} />
-  return <div className={`brand-product-visual ${product.tone} ${className}`} aria-hidden="true"><div className="product-halo" /><img src={product.image} alt="" referrerPolicy="no-referrer" /></div>
-}
-
 function ShelfProduct({ item, active }) {
   const { product } = item
   return <article className={`shelf-product shelf-product--${item.id} ${active ? 'is-focus' : ''}`} data-shelf-product={item.id}>
@@ -66,35 +46,16 @@ function ShelfProduct({ item, active }) {
   </article>
 }
 
-function ShopPanel({ open, mode, onClose, cart, onAdd, onRemove }) {
-  const [filter, setFilter] = useState('All')
-  const [selected, setSelected] = useState(products[0])
-  const visible = filter === 'All' ? products : products.filter((product) => product.category === filter)
-  const cartItems = products.filter((product) => cart[product.name])
-
-  return <aside className={`shop-panel ${open ? 'open' : ''}`} aria-hidden={!open}>
-    <button className="panel-backdrop" onClick={onClose} aria-label="Close shop" />
-    <div className="panel-sheet" role="dialog" aria-modal="true" aria-label={mode === 'bag' ? 'Your bag' : 'Shop SkinMatrix'}>
-      <div className="panel-top"><span className="eyebrow">{mode === 'bag' ? 'Your selected rituals' : 'The SkinMatrix selection'}</span><button onClick={onClose} className="panel-close" aria-label="Close">×</button></div>
-      {mode === 'bag' ? <div className="bag-view"><h2>Your <em>edit.</em></h2>{cartItems.length ? <><div className="bag-items">{cartItems.map(product => <div className="bag-item" key={product.name}><ProductVisual product={product} /><div><span>{product.brand}</span><h3>{product.name}</h3><p>{cart[product.name]} selected · {product.price}</p></div><button onClick={() => onRemove(product.name)} aria-label={`Remove ${product.name}`}>−</button></div>)}</div><p className="catalogue-note">Prices and live checkout will follow the verified SkinMatrix catalogue.</p><button className="button dark checkout">Request this edit <Arrow /></button></> : <p className="empty-state">Nothing selected yet. Start with a goal, then add what your routine needs.</p>}<a className="text-link" href="#concerns" onClick={onClose}>Shop by concern <Arrow /></a></div> : <div className="shop-view"><div className="shop-title"><h2>Find your<br /><em>ritual.</em></h2><p>Recognised skincare and wellness brands, selected for the way they work together.</p></div><div className="shop-filters">{['All', 'Inside', 'On the surface'].map(item => <button key={item} onClick={() => setFilter(item)} className={filter === item ? 'active' : ''}>{item}</button>)}</div><div className="shop-products">{visible.map(product => <article key={product.name} className={selected.name === product.name ? 'selected' : ''} onClick={() => setSelected(product)}><div className="shop-product-art"><ProductVisual product={product} /></div><div><span>{product.brand}</span><h3>{product.name}</h3><p>{product.note}</p><b>{product.price}</b></div></article>)}</div><div className="quick-product"><ProductVisual product={selected} /><div><span className="eyebrow">{selected.brand}</span><h3>{selected.name}</h3><p>{selected.note}. A considered essential in the SkinMatrix edit.</p><div><b>{selected.price}</b><button className="button dark" onClick={() => onAdd(selected)}>Save to my edit <Arrow /></button></div></div></div></div>}
-    </div>
-  </aside>
-}
-
 export default function App() {
   const app = useRef(null)
   const [activeConcern, setActiveConcern] = useState('Glow')
   const [activeNode, setActiveNode] = useState('Skin')
   const [activeAge, setActiveAge] = useState('30–39')
-  const [panelMode, setPanelMode] = useState(null)
-  const [cart, setCart] = useState({})
+  const [bagOpen, setBagOpen] = useState(false)
+  const { bag, count: cartCount, add: addProduct, remove: removeProduct } = useBag()
   const [heroFocus, setHeroFocus] = useState('Whole self')
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const current = concerns[activeConcern]
   const currentHeroFocus = heroFocuses[heroFocus]
-  const cartCount = Object.values(cart).reduce((sum, count) => sum + count, 0)
-  const addProduct = (product) => setCart((items) => ({ ...items, [product.name]: (items[product.name] || 0) + 1 }))
-  const removeProduct = (name) => setCart((items) => ({ ...items, [name]: Math.max(0, (items[name] || 1) - 1) }))
 
   useEffect(() => {
     const ctx = gsap.context(() => {
@@ -127,20 +88,15 @@ export default function App() {
   }, [])
 
   return <main ref={app}>
-    <header className="site-header">
-      <a href="#top" className="brand"><img src="/assets/skinmatrix-logo.png" alt="SkinMatrix — Nutrition for Every Age" /></a>
-      <nav><a href="#concerns">Discover</a><button onClick={() => setPanelMode('shop')}>Shop</button><a href="#ingredients">Ingredients</a><a href="#edit">The Edit</a></nav>
-      <div className="header-actions"><button aria-label="Search">⌕</button><button onClick={() => setPanelMode('bag')} aria-label="Open shopping bag">Bag <sup>{cartCount}</sup></button><button className="menu" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'} aria-expanded={mobileMenuOpen}>{mobileMenuOpen ? '×' : '☰'}</button></div>
-      <div className={`mobile-nav ${mobileMenuOpen ? 'open' : ''}`} aria-hidden={!mobileMenuOpen}><a href="#concerns" onClick={() => setMobileMenuOpen(false)}>Discover</a><button onClick={() => { setPanelMode('shop'); setMobileMenuOpen(false) }}>Shop the edit</button><a href="#ingredients" onClick={() => setMobileMenuOpen(false)}>Ingredients</a><a href="#edit" onClick={() => setMobileMenuOpen(false)}>The edit</a><button onClick={() => { setPanelMode('bag'); setMobileMenuOpen(false) }}>Bag · {cartCount}</button></div>
-    </header>
+    <SiteHeader bagCount={cartCount} onBag={() => setBagOpen(true)} />
 
     <section className="hero matrix-shelf-hero" id="top">
       <div className={`hero-sticky ${heroFocus !== 'Whole self' ? 'focus-active' : ''}`} data-focus={heroFocus}>
         <div className="hero-atmosphere" aria-hidden="true"><i className="atmosphere-a" /><i className="atmosphere-b" /><i className="atmosphere-c" /><span className="atmosphere-grain" /></div>
         <div className="eyebrow hero-kicker">SkinMatrix / skincare + supplements</div>
         <div className="hero-copy">
-          <div className="hero-intro-copy"><h1>Your body<br />is a <em>system.</em></h1><p>Skin. Sleep. Energy. Women’s wellness.<br />One considered edit for the whole you.</p><div className="hero-actions"><button onClick={() => setPanelMode('shop')} className="button dark">Shop now <Arrow /></button><a href="#concerns" className="button ghost">Explore the matrix <Arrow /></a></div><div className="mobile-focus-controls" role="tablist" aria-label="Choose a SkinMatrix focus">{Object.keys(heroFocuses).filter((name) => name !== 'Whole self').map(name => <button key={name} className={heroFocus === name ? 'active' : ''} onClick={() => setHeroFocus(name)} role="tab" aria-selected={heroFocus === name}>{name}</button>)}</div><span className="hero-proof">The real edit · for your whole routine</span></div>
-          <div className="hero-payoff"><span className="eyebrow">Choose your focus</span><h2>Build care<br /><em>around you.</em></h2><p>{currentHeroFocus.line}</p><div className="hero-focus-controls" role="tablist" aria-label="Choose a SkinMatrix focus">{Object.keys(heroFocuses).filter((name) => name !== 'Whole self').map(name => <button key={name} className={heroFocus === name ? 'active' : ''} onClick={() => setHeroFocus(name)} role="tab" aria-selected={heroFocus === name}>{name}</button>)}</div><button onClick={() => setPanelMode('shop')} className="button light hero-payoff-shop">Shop this edit <Arrow /></button></div>
+          <div className="hero-intro-copy"><h1>Your body<br />is a <em>system.</em></h1><p>Skin. Sleep. Energy. Women’s wellness.<br />One considered edit for the whole you.</p><div className="hero-actions"><a href="/shop" className="button dark">Shop now <Arrow /></a><a href="#concerns" className="button ghost">Explore the matrix <Arrow /></a></div><div className="mobile-focus-controls" role="tablist" aria-label="Choose a SkinMatrix focus">{Object.keys(heroFocuses).filter((name) => name !== 'Whole self').map(name => <button key={name} className={heroFocus === name ? 'active' : ''} onClick={() => setHeroFocus(name)} role="tab" aria-selected={heroFocus === name}>{name}</button>)}</div><span className="hero-proof">The real edit · for your whole routine</span></div>
+          <div className="hero-payoff"><span className="eyebrow">Choose your focus</span><h2>Build care<br /><em>around you.</em></h2><p>{currentHeroFocus.line}</p><div className="hero-focus-controls" role="tablist" aria-label="Choose a SkinMatrix focus">{Object.keys(heroFocuses).filter((name) => name !== 'Whole self').map(name => <button key={name} className={heroFocus === name ? 'active' : ''} onClick={() => setHeroFocus(name)} role="tab" aria-selected={heroFocus === name}>{name}</button>)}</div><a href="/shop" className="button light hero-payoff-shop">Shop this edit <Arrow /></a></div>
         </div>
         <div className="hero-shelf-stage" aria-label="The SkinMatrix product edit">
           <div className="shelf-aurora" /><div className="shelf-ring shelf-ring-a" /><div className="shelf-ring shelf-ring-b" />
@@ -175,7 +131,7 @@ export default function App() {
 
     <section className="product-exhibition" id="products">
       <div className="product-heading reveal"><span className="eyebrow">The SkinMatrix selection</span><h2>Objects of <em>care.</em></h2><p>Designed to live on your shelf, and in your routine.</p><img className="product-heading-art" src="/assets/matrix-products.png" alt="SkinMatrix product and serum composition" /></div>
-      <div className="product-rail reveal">{products.map((product) => <article className={`product-slide actual-${product.tone}`} key={product.name} onClick={() => setPanelMode('shop')}><div className="product-index">{product.no} <span> / 0{products.length}</span></div><ProductVisual product={product} className="exhibition-product" /><div className="product-caption"><span>{product.brand}</span><h3>{product.name}</h3><p>{product.note}</p><div><b>{product.price}</b><button onClick={(event) => { event.stopPropagation(); addProduct(product) }} aria-label={`Save ${product.name} to your edit`}>+</button></div></div></article>)}</div>
+      <div className="product-rail reveal">{products.map((product) => <article className={`product-slide actual-${product.tone}`} key={product.name} onClick={() => { window.location.href = '/shop' }}><div className="product-index">{product.no} <span> / 0{products.length}</span></div><ProductVisual product={product} className="exhibition-product" /><div className="product-caption"><span>{product.brand}</span><h3>{product.name}</h3><p>{product.note}</p><div><b>{product.price}</b><button onClick={(event) => { event.stopPropagation(); addProduct(product) }} aria-label={`Save ${product.name} to your edit`}>+</button></div></div></article>)}</div>
     </section>
 
     <section className="ingredient-universe" id="ingredients">
@@ -188,7 +144,7 @@ export default function App() {
     <section className="brand-edit" id="edit"><div className="edit-title reveal"><span className="eyebrow">Curated, never crowded</span><h2>The SkinMatrix <em>Edit.</em></h2><p>We don’t stock everything. We select what deserves to be here.</p></div><div className="edit-brands reveal"><span>NEOCELL</span><span>NOW</span><span>VITABIOTICS</span><span>ANUA</span><span>OLAPLEX</span></div><a className="text-link reveal" href="#products">Explore all brands <Arrow /></a></section>
 
     <section className="closing"><div className="closing-scene"><MatrixScene /><div className="closing-glow" /></div><div className="closing-copy"><span className="eyebrow">SkinMatrix</span><h2>Build your<br /><em>matrix.</em></h2><p>Care can be more connected.</p><div><a href="#concerns" className="button light">Shop by concern <Arrow /></a><a href="#products" className="button outline">Explore everything <Arrow /></a></div></div></section>
-    <footer><img src="/assets/skinmatrix-logo.png" alt="SkinMatrix" /><div><a href="#top">Instagram</a><a href="#top">Contact</a><a href="#top">Shipping & Returns</a></div><small>© 2026 SkinMatrix. Nutrition for every age.</small></footer>
-    <ShopPanel open={Boolean(panelMode)} mode={panelMode} onClose={() => setPanelMode(null)} cart={cart} onAdd={addProduct} onRemove={removeProduct} />
+    <SiteFooter />
+    <BagPanel open={bagOpen} onClose={() => setBagOpen(false)} bag={bag} onRemove={removeProduct} />
   </main>
 }
