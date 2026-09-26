@@ -10,8 +10,8 @@ Last updated: 2026-09-26. Read this first, then `CLAUDE_HANDOVER.md` (original b
 
 ## Working-tree warnings (read before touching anything)
 - **Another agent edits the public site in this same folder.** `src/App.jsx`, `src/main.jsx`, the public CSS files, `public/assets/products/` and `work/*.png` have uncommitted changes that are not from the admin work. Don't revert, stash or overwrite them. Coordinate before editing public files.
-- Git: one local commit, `e134930 Baseline: public storefront before admin prototype`. **Everything since is uncommitted.** The GitHub repo `https://github.com/johnsedofiadakey-hue/skinmatrix` is **empty** and has no remote configured here. Nothing has been pushed or deployed. Ask the owner before committing or pushing, and keep admin and public changes in separate commits.
-- Firebase: the owner shared the web config for project `skinmatrixgh` in chat. It has **not** been added to the code. Web API keys are public by design, but don't wire Firebase, Auth, Firestore or payments until the backend contracts (Phase 2 in `docs/OPERATIONS_IMPLEMENTATION_PLAN.md`) are built. Never commit service-account keys or secrets.
+- Git: pushed to `origin` = https://github.com/johnsedofiadakey-hue/skinmatrix (**public repo**), branch `main`. Admin and storefront changes are in separate commits. `work/*.png` are throwaway screenshots, left untracked. Never commit service-account keys or `.env` files.
+- Firebase: Hosting is live at https://skinmatrixgh.web.app (public site) and https://skinmatrixgh.web.app/admin/ (demo admin, browser-only data). `.firebaserc` points to `skinmatrixgh`. Deploy: `npm run build && firebase deploy --only hosting`. Auth, Firestore and payments are **not** wired; don't wire them until the backend contracts (Phase 2) are built.
 - Lollarod (`/Users/truth/Developer/lollarod Project/lollarod`) is a **read-only** reference. Never edit it or read its `.env`/credentials.
 
 ## Run and verify
@@ -49,17 +49,14 @@ Architecture: `src/admin/demo/opsStore.js` **simulates the future trusted server
 - Note: the in-app browser pane can mis-map click coordinates; driving the page with DOM events via javascript_tool was reliable.
 
 ## Open work, in priority order
-1. **Public-site font** (requested 2026-09-26, **blocked on the owner**):
-   - Identified as **Crox™ 2.0 by NumidiaType** (designer Yassine Abdi): a paid geometric sans with 10 weights plus italics, 20 styles in all. It's sold on MyFonts (https://www.myfonts.com/collections/crox-font-numidiatype) and Fontspring. Webfont licence: about $25 per style, $84 for the 6-style Basic Pack, $170 for the family. There are no free styles. A separate **Crox Rounded** family also exists.
-   - **Waiting on the owner for:** (a) buying a webfont licence and putting the `.woff2` files in `public/fonts/` (at least regular, medium and bold); (b) confirming Crox or Crox Rounded (the specimen looked slightly rounded); (c) confirming whether this agent may edit the public-site files, which the original brief assigned to another agent who still has uncommitted changes there.
-   - **Never** use the free-download copies on sites like befonts: they're unlicensed.
-   - **When unblocked:** self-host with `@font-face` (`font-display: swap`) and replace DM Sans in the public CSS (`src/styles.css` loads DM Sans, DM Mono and Playfair Display via a Google Fonts `@import`). Keep Playfair and DM Mono unless the owner says otherwise. Check `npm run build`, and check the homepage on desktop and mobile.
+1. ✅ **Public-site font done 2026-09-26:** the owner chose a free option over buying Crox 2.0. **Outfit** (Google Fonts) replaced Manrope in `styles.css`, `overrides.css` and `brand-products.css`; Bodoni Moda and DM Mono are unchanged. Never use unlicensed "free download" copies of Crox.
 2. **Shift and cash-up** (recommended to the owner, not built yet): opening float, cash paid out, counted vs expected cash at close, difference recorded per cashier, end-of-day report. Recorded MoMo, cash refunds and cash change all feed the expected cash.
 3. SMS to customers (order ready / out for delivery); VAT/NHIL/GETFund on receipts if the business is VAT-registered (confirm with the accountant); an offline-selling decision.
 4. Phase 2/3 backend: Firestore model and rules, callable functions matching `opsStore.js`, Firebase Auth with role claims, PIN verification with a proper slow hash and lockout (`lib/demoPin.js` is **demo only**).
 
 ## Other open questions for the owner
-- Commit and push? Suggested: commit the admin work on its own branch (for example `admin-prototype`), kept separate from the public-site agent's changes, then push to the empty GitHub repo. Not done yet; wait for a yes.
+- Should the GitHub repo stay public? The demo PINs are in the code, but they're demo only.
+- The live admin is a public demo URL. Before real use, it needs Firebase Auth (Phase 3).
 
 ## Conventions
 - Money is always integer pesewas; format with `lib/money.js` only for display.
