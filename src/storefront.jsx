@@ -99,7 +99,6 @@ export function SiteHeader({ base = '' }) {
   const links = [
     { href: '/shop', label: 'Shop' },
     { href: `${base}#concerns`, label: 'Find by need' },
-    { href: `${base}#ingredients`, label: 'Ingredients' },
     { href: `${base}#edit`, label: 'Brands' },
   ]
   return <header className="site-header">

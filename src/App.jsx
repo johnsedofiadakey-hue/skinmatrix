@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import MatrixScene from './MatrixScene'
 import { AddIcon, Arrow, CartPanel, heroProducts, priceLabel, ProductVisual, SiteFooter, SiteHeader, useSite } from './storefront'
 import { canBuy } from './cloud/site.js'
 
@@ -30,10 +29,6 @@ const heroFocuses = {
   "Women’s Health": { products: ['wellwoman'], line: 'Vitamins made for women over 50.' },
 }
 
-const ingredients = [
-  ['Vitamin C', 'Brightens skin', 'C'], ['Collagen', 'Firms skin', 'Co'], ['Hyaluronic acid', 'Keeps skin moist', 'HA'], ['Biotin', 'Helps hair and nails', 'B7'], ['Magnesium', 'Helps you relax', 'Mg'], ['Omega 3', 'Feeds skin and heart', 'O3'],
-]
-
 const ages = {
   '18–29': { tag: 'Start', result: 'Start good habits early.' },
   '30–39': { tag: 'Protect', result: 'Protect your skin and keep it moist.' },
@@ -59,7 +54,6 @@ export default function App() {
   const app = useRef(null)
   const { content, products, cart, add } = useSite()
   const [activeConcern, setActiveConcern] = useState('Glow')
-  const [activeNode, setActiveNode] = useState('Skin')
   const [activeAge, setActiveAge] = useState('30–39')
   const [heroFocus, setHeroFocus] = useState('Whole self')
   const current = concerns[activeConcern]
@@ -141,26 +135,17 @@ export default function App() {
       </div>
     </section>
 
-    <section className="matrix-explorer" id="matrix">
-      <div className="matrix-copy reveal"><span className="eyebrow">Everything is connected</span><h2>Your body is<br /><em>connected.</em></h2><p>Pick an area. We show you the care that goes with it.</p><div className="matrix-response"><span className="eyebrow">{activeNode}</span><h3>Care for your {activeNode.toLowerCase()}.</h3><p>Supplements and skincare that work well together.</p><a href="/shop">Shop now <Arrow /></a></div></div>
-      <div className="matrix-map reveal"><div className="map-core"><MatrixScene compact /><span>YOU</span></div>{['Skin', 'Hair', 'Body', 'Energy', 'Sleep', 'Ageing'].map((node, i) => <button onClick={() => setActiveNode(node)} className={`map-node map-${i} ${activeNode === node ? 'selected' : ''}`} key={node} aria-pressed={activeNode === node}>{node}</button>)}</div>
-    </section>
 
     <section className="product-exhibition" id="products">
       <div className="product-heading reveal"><span className="eyebrow">Our products</span><h2>Shop our <em>favourites.</em></h2><p>Trusted brands, chosen by us.</p><img className="product-heading-art" src="/assets/matrix-products.png" alt="" /></div>
       <div className="product-rail reveal">{products.map((product, index) => <article className={`product-slide actual-${RAIL_TONES[index % RAIL_TONES.length]}`} key={product.id} onClick={() => { window.location.href = '/shop' }}><div className="product-index">{String(index + 1).padStart(2, '0')} <span> / {String(products.length).padStart(2, '0')}</span></div><ProductVisual product={product} className="exhibition-product" /><div className="product-caption"><span>{product.brand}</span><h3>{product.name}</h3><p>{product.description}</p><div><b>{priceLabel(product)}</b>{canBuy(product) ? <button onClick={(event) => { event.stopPropagation(); add(product) }} aria-label={`Add ${product.name} to cart${cart[product.id] ? ` (${cart[product.id]} in cart)` : ''}`}><AddIcon /></button> : null}</div></div></article>)}</div>
     </section>
 
-    <section className="ingredient-universe" id="ingredients">
-      <div className="ingredient-top reveal"><span className="eyebrow">What is inside</span><h2>Ingredients that<br /><em>work.</em></h2><p>Six ingredients you will find in our products, and what they do.</p></div>
-      <div className="ingredient-grid reveal">{ingredients.map(([name, detail, symbol], i) => <a href="/shop" className={`ingredient ingredient-${i}`} key={name}><div className="ingredient-sphere"><i>{symbol}</i></div><span>{name}</span><small>{detail}</small><Arrow /></a>)}</div>
-    </section>
 
     <section className="real-section"><div className="real-image reveal"><img src="/assets/editorial-portrait.png" alt="A smiling woman with healthy skin" /><span>Real skin.<br />Real life.</span></div><div className="real-copy reveal"><span className="eyebrow">For every age</span><h2>Different ages.<br /><em>Different needs.</em></h2><p>Your skin changes as you get older. Pick your age to see where to start.</p><div className="age-switcher">{Object.keys(ages).map(age => <button onClick={() => setActiveAge(age)} className={age === activeAge ? 'active' : ''} key={age} aria-pressed={age === activeAge}><b>{age}</b><span>{ages[age].tag}</span></button>)}</div><div className="age-result"><span className="eyebrow">Age {activeAge}</span><h3>{ages[activeAge].result}</h3><a href="/shop">See products <Arrow /></a></div></div></section>
 
     <section className="brand-edit" id="edit"><div className="edit-title reveal"><span className="eyebrow">Brands we sell</span><h2>Brands you can <em>trust.</em></h2><p>We only sell products we trust.</p></div><div className="edit-brands reveal"><span>NEOCELL</span><span>NOW</span><span>VITABIOTICS</span><span>ANUA</span><span>OLAPLEX</span></div><a className="text-link reveal" href="/shop">Shop all brands <Arrow /></a></section>
 
-    <section className="closing"><div className="closing-scene"><MatrixScene /><div className="closing-glow" /></div><div className="closing-copy"><span className="eyebrow">SkinMatrix</span><h2>Start your<br /><em>routine.</em></h2><p>Find the right care for you.</p><div><a href="/shop" className="button light">Shop now <Arrow /></a><a href="#concerns" className="button outline">Find by need <Arrow /></a></div></div></section>
     <SiteFooter />
     <CartPanel />
   </main>
