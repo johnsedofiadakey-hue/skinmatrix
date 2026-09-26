@@ -159,3 +159,6 @@ footer.site-footer .footer-links, footer.site-footer .footer-contact { display: 
 footer.site-footer .footer-top { display: grid; }
 footer.site-footer .footer-bottom { display: flex; }
 @media (max-width: 760px) { footer.site-footer .footer-top { grid-template-columns: 1fr; } }
+
+/* GSAP animates these buttons' opacity and transform; a CSS transition on "all" fights it. */
+.concern-list button { transition: color .25s; }

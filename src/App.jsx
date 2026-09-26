@@ -65,7 +65,9 @@ export default function App() {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
       // Sections rise into view; the items inside them follow one after another.
-      gsap.utils.toArray('.reveal').forEach((item) => gsap.from(item, { scrollTrigger: { trigger: item, start: 'top 88%' }, y: 80, opacity: 0, duration: 1.1, ease: 'power4.out' }))
+      // fromTo with explicit end values: never read the "end" state from the page, which CSS transitions can catch mid-fade.
+      const shown = { opacity: 1, x: 0, y: 0 }
+      gsap.utils.toArray('.reveal').forEach((item) => gsap.fromTo(item, { y: 80, opacity: 0 }, { ...shown, scrollTrigger: { trigger: item, start: 'top 88%' }, duration: 1.1, ease: 'power4.out' }))
       const staggered = [
         ['.io-worlds', ':scope > article', { y: 90 }],
         ['.concern-list', ':scope > button', { x: -40, y: 0 }],
@@ -76,7 +78,7 @@ export default function App() {
       staggered.forEach(([group, children, from]) => {
         const node = document.querySelector(group)
         if (!node) return
-        gsap.from(node.querySelectorAll(children), { scrollTrigger: { trigger: node, start: 'top 85%' }, opacity: 0, duration: 0.9, ease: 'power3.out', stagger: 0.09, ...from })
+        gsap.fromTo(node.querySelectorAll(children), { opacity: 0, ...from }, { ...shown, scrollTrigger: { trigger: node, start: 'top 85%' }, duration: 0.9, ease: 'power3.out', stagger: 0.09 })
       })
       gsap.fromTo('.real-image img', { scale: 1.18 }, { scale: 1, ease: 'none', scrollTrigger: { trigger: '.real-section', start: 'top bottom', end: 'bottom top', scrub: true } })
 
@@ -93,9 +95,9 @@ export default function App() {
       }
 
       // Opening: headline, text and buttons rise in turn; the products pop in.
-      gsap.from('.hero-shelf-stage', { scale: 0.94, opacity: 0, duration: 1.25, ease: 'power3.out' })
-      gsap.from('.hero-intro-copy > *', { y: 50, opacity: 0, duration: 1, ease: 'power4.out', stagger: 0.12, delay: 0.15 })
-      gsap.from('.shelf-product', { scale: 0.4, opacity: 0, duration: 1.1, ease: 'back.out(1.6)', stagger: 0.14, delay: 0.35 })
+      gsap.fromTo('.hero-shelf-stage', { scale: 0.94, opacity: 0 }, { scale: 1, opacity: 1, duration: 1.25, ease: 'power3.out' })
+      gsap.fromTo('.hero-intro-copy > *', { y: 50, opacity: 0 }, { y: 0, opacity: 1, duration: 1, ease: 'power4.out', stagger: 0.12, delay: 0.15 })
+      gsap.fromTo('.shelf-product', { scale: 0.4, opacity: 0 }, { scale: 1, opacity: 1, duration: 1.1, ease: 'back.out(1.6)', stagger: 0.14, delay: 0.35, clearProps: 'opacity' }) // so tapping a need can dim the others again
 
       // Scrolling away from the top: products drift at different speeds and tilt, the headline lifts and fades.
       const heroScroll = { trigger: '.matrix-shelf-hero', start: 'top top', end: () => `+=${window.innerHeight}`, scrub: 0.6 }
