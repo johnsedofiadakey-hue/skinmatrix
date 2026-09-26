@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { CartPanel, SiteFooter, SiteHeader, useSite } from './storefront'
+import { SiteFooter, SiteHeader, useSite } from './storefront'
 import { fillShopDetails } from './cloud/site.js'
 
 export const sectionId = (title) => String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -39,6 +39,5 @@ export default function TermsPage() {
       </article>
     </div>
     <SiteFooter />
-    <CartPanel />
   </main>
 }

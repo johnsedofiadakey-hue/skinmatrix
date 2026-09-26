@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, ArrowUpRight, Camera, Mail, Menu, MessageCircle, Minus, Phone, Plus, ShoppingBag, Trash2, X } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Camera, Mail, Menu, MessageCircle, Phone, Plus, ShoppingBag, X } from 'lucide-react'
 import { canBuy, DEFAULT_PRODUCTS, formatGhs, mergeCatalog, mergeContent } from './cloud/site.js'
 
 // Shared by every public page: website content (from the admin editor), the cart, header, footer and cart panel.
@@ -54,7 +54,10 @@ export function SiteProvider({ children }) {
     const stored = readJson(CART_KEY)
     return stored && typeof stored === 'object' ? stored : {}
   })
-  const [cartOpen, setCartOpen] = useState(false)
+  // Checkout slides in from the side: step 0 cart, 1 details, 2 review and pay, 3 done. /checkout opens it.
+  const [checkout, setCheckout] = useState(() => ({ open: window.location.pathname.replace(/\/+$/, '') === '/checkout', step: 0 }))
+  // The product being looked at, kept in the address (?product=id) so it can be shared and Back closes it.
+  const [productId, setProductId] = useState(() => new URLSearchParams(window.location.search).get('product'))
 
   useEffect(() => {
     let live = true
@@ -62,6 +65,11 @@ export function SiteProvider({ children }) {
     return () => { live = false }
   }, [])
   useEffect(() => { writeJson(CART_KEY, cart) }, [cart])
+  useEffect(() => {
+    const onPop = () => setProductId(new URLSearchParams(window.location.search).get('product'))
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   const content = useMemo(() => mergeContent(saved.content), [saved.content])
   // Local testing only (removed from the live build): localStorage 'skinmatrix-dev-catalog' = { products: [...] }.
@@ -77,19 +85,42 @@ export function SiteProvider({ children }) {
     else delete next[id]
     return next
   }), [])
-  const add = useCallback((product) => {
+  const add = useCallback((product, qty = 1) => {
     if (!canBuy(product)) return
-    setCart((items) => ({ ...items, [product.id]: Math.min(20, (items[product.id] || 0) + 1) }))
+    setCart((items) => ({ ...items, [product.id]: Math.min(20, (items[product.id] || 0) + qty) }))
   }, [])
   const clear = useCallback(() => setCart({}), [])
 
-  const value = { content, products: shown, cart, count, add, setQty, clear, cartOpen, openCart: () => setCartOpen(true), closeCart: () => setCartOpen(false) }
+  const openProduct = useCallback((id) => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('product', id)
+    if (new URLSearchParams(window.location.search).get('product')) window.history.replaceState(null, '', url)
+    else window.history.pushState(null, '', url)
+    setProductId(id)
+  }, [])
+  const closeProduct = useCallback(() => {
+    if (!new URLSearchParams(window.location.search).get('product')) { setProductId(null); return }
+    const url = new URL(window.location.href)
+    url.searchParams.delete('product')
+    window.history.replaceState(null, '', url)
+    setProductId(null)
+  }, [])
+
+  const value = {
+    content, products: shown, cart, count, add, setQty, clear,
+    cartOpen: checkout.open, checkoutStep: checkout.step,
+    openCart: (step = 0) => setCheckout({ open: true, step: Number.isInteger(step) ? step : 0 }),
+    setCheckoutStep: (step) => setCheckout((state) => ({ ...state, step })),
+    closeCart: () => setCheckout((state) => ({ open: false, step: state.step === 3 ? 0 : state.step })),
+    product: productId ? shown.find((item) => item.id === productId) || null : null,
+    openProduct, closeProduct,
+  }
   return <SiteContext.Provider value={value}>{children}</SiteContext.Provider>
 }
 
 export const useSite = () => useContext(SiteContext)
 
-// ---- Header, footer, cart panel ----------------------------------------------------------------------
+// ---- Header and footer ----------------------------------------------------------------------
 
 // `base` is '' on the home page (in-page links) and '/' on other pages (links back to home page sections).
 export function SiteHeader({ base = '' }) {
@@ -105,7 +136,7 @@ export function SiteHeader({ base = '' }) {
     <a href={base ? '/' : '#top'} className="brand"><img src="/assets/skinmatrix-logo.png" alt="SkinMatrix home" /></a>
     <nav aria-label="Main">{links.map((link) => <a key={link.label} href={link.href}>{link.label}</a>)}</nav>
     <div className="header-actions">
-      <button className="cart-button" onClick={openCart} aria-label={`Open cart, ${count} ${count === 1 ? 'item' : 'items'}`}><ShoppingBag {...ICON} /> <span className="cart-word">Cart</span> <sup>{count}</sup></button>
+      <button className="cart-button" onClick={() => openCart()} aria-label={`Open cart, ${count} ${count === 1 ? 'item' : 'items'}`}><ShoppingBag {...ICON} /> <span className="cart-word">Cart</span> <sup>{count}</sup></button>
       <button className="menu" onClick={() => setMenuOpen(!menuOpen)} aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen}>{menuOpen ? <X {...ICON} /> : <Menu {...ICON} />}</button>
     </div>
     <div className={`mobile-nav ${menuOpen ? 'open' : ''}`} aria-hidden={!menuOpen}>
@@ -134,7 +165,6 @@ export function SiteFooter() {
       <a href="/" className="footer-logo"><img src="/assets/skinmatrix-logo.png" alt="SkinMatrix home" /></a>
       <nav className="footer-links" aria-label="Footer">
         <a href="/shop">Shop</a>
-        <a href="/checkout">Cart and checkout</a>
         <a href="/terms">Terms and conditions</a>
         <a href="/terms#returns-and-refunds">Returns and refunds</a>
       </nav>
@@ -151,50 +181,4 @@ export function SiteFooter() {
       <a className="footer-staff" href="/admin/">Staff login</a>
     </div>
   </footer>
-}
-
-export function CartPanel() {
-  const { products, cart, setQty, cartOpen, closeCart } = useSite()
-  const items = products.filter((product) => canBuy(product) && cart[product.id])
-  const subtotal = items.reduce((sum, product) => sum + product.price * cart[product.id], 0)
-
-  useEffect(() => {
-    if (!cartOpen) return undefined
-    const onKey = (event) => { if (event.key === 'Escape') closeCart() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [cartOpen, closeCart])
-
-  return <aside className={`shop-panel ${cartOpen ? 'open' : ''}`} aria-hidden={!cartOpen}>
-    <button className="panel-backdrop" onClick={closeCart} aria-label="Close cart" tabIndex={cartOpen ? 0 : -1} />
-    <div className="panel-sheet cart-sheet" role="dialog" aria-modal="true" aria-label="Your cart">
-      <div className="panel-top"><span className="eyebrow">Step 1 of 3 · Cart</span><button onClick={closeCart} className="panel-close" aria-label="Close cart" tabIndex={cartOpen ? 0 : -1}><X {...ICON} /></button></div>
-      <h2 className="cart-title">Your cart</h2>
-      {items.length ? <>
-        <ul className="cart-lines">{items.map((product) => <li className="cart-line" key={product.id}>
-          <div className="cart-line-art"><ProductVisual product={product} /></div>
-          <div className="cart-line-info">
-            <span className="eyebrow">{product.brand}</span>
-            <b>{product.name}</b>
-            <small>{product.size ? `${product.size} · ` : ''}{formatGhs(product.price)} each</small>
-            <div className="qty" role="group" aria-label={`Quantity of ${product.name}`}>
-              <button onClick={() => setQty(product.id, cart[product.id] - 1)} aria-label="One less" tabIndex={cartOpen ? 0 : -1}>{cart[product.id] === 1 ? <Trash2 {...ICON} /> : <Minus {...ICON} />}</button>
-              <span aria-live="polite">{cart[product.id]}</span>
-              <button onClick={() => setQty(product.id, cart[product.id] + 1)} aria-label="One more" disabled={cart[product.id] >= 20} tabIndex={cartOpen ? 0 : -1}><Plus {...ICON} /></button>
-            </div>
-          </div>
-          <b className="cart-line-total">{formatGhs(product.price * cart[product.id])}</b>
-        </li>)}</ul>
-        <div className="cart-summary">
-          <div><span>Items total</span><b>{formatGhs(subtotal)}</b></div>
-          <p>Delivery fee is added at checkout.</p>
-          <a className="button dark cart-cta" href="/checkout" tabIndex={cartOpen ? 0 : -1}>Go to checkout <ArrowNext /></a>
-          <button className="cart-keep" onClick={closeCart} tabIndex={cartOpen ? 0 : -1}>Keep shopping</button>
-        </div>
-      </> : <div className="cart-empty">
-        <p>Your cart is empty.</p>
-        <a className="button dark" href="/shop" tabIndex={cartOpen ? 0 : -1}>Go to the shop <ArrowNext /></a>
-      </div>}
-    </div>
-  </aside>
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { AddIcon, Arrow, CartPanel, heroProducts, priceLabel, ProductVisual, SiteFooter, SiteHeader, useSite } from './storefront'
+import { AddIcon, Arrow, heroProducts, priceLabel, ProductVisual, SiteFooter, SiteHeader, useSite } from './storefront'
 import { canBuy } from './cloud/site.js'
 
 gsap.registerPlugin(ScrollTrigger)
@@ -52,7 +52,7 @@ const withBreaks = (text) => String(text).split('\n').flatMap((line, index) => i
 
 export default function App() {
   const app = useRef(null)
-  const { content, products, cart, add } = useSite()
+  const { content, products, cart, add, openProduct } = useSite()
   const [activeConcern, setActiveConcern] = useState('Glow')
   const [activeAge, setActiveAge] = useState('30–39')
   const [heroFocus, setHeroFocus] = useState('Whole self')
@@ -170,7 +170,7 @@ export default function App() {
 
     <section className="product-exhibition" id="products">
       <div className="product-heading reveal"><span className="eyebrow">Our products</span><h2>Shop our <em>favourites.</em></h2><p>Trusted brands, chosen by us.</p><img className="product-heading-art" src="/assets/matrix-products.png" alt="" /></div>
-      <div className="product-rail reveal">{products.map((product, index) => <article className={`product-slide actual-${RAIL_TONES[index % RAIL_TONES.length]}`} key={product.id} onClick={() => { window.location.href = '/shop' }}><div className="product-index">{String(index + 1).padStart(2, '0')} <span> / {String(products.length).padStart(2, '0')}</span></div><ProductVisual product={product} className="exhibition-product" /><div className="product-caption"><span>{product.brand}</span><h3>{product.name}</h3><p>{product.description}</p><div><b>{priceLabel(product)}</b>{canBuy(product) ? <button onClick={(event) => { event.stopPropagation(); add(product) }} aria-label={`Add ${product.name} to cart${cart[product.id] ? ` (${cart[product.id]} in cart)` : ''}`}><AddIcon /></button> : null}</div></div></article>)}</div>
+      <div className="product-rail reveal">{products.map((product, index) => <article className={`product-slide actual-${RAIL_TONES[index % RAIL_TONES.length]}`} key={product.id} onClick={() => openProduct(product.id)}><div className="product-index">{String(index + 1).padStart(2, '0')} <span> / {String(products.length).padStart(2, '0')}</span></div><ProductVisual product={product} className="exhibition-product" /><div className="product-caption"><span>{product.brand}</span><h3>{product.name}</h3><p>{product.description}</p><div><b>{priceLabel(product)}</b>{canBuy(product) ? <button onClick={(event) => { event.stopPropagation(); add(product) }} aria-label={`Add ${product.name} to cart${cart[product.id] ? ` (${cart[product.id]} in cart)` : ''}`}><AddIcon /></button> : null}</div></div></article>)}</div>
     </section>
 
 
@@ -179,6 +179,5 @@ export default function App() {
     <section className="brand-edit" id="edit"><div className="edit-title reveal"><span className="eyebrow">Brands we sell</span><h2>Brands you can <em>trust.</em></h2><p>We only sell products we trust.</p></div><div className="edit-brands reveal"><span>NEOCELL</span><span>NOW</span><span>VITABIOTICS</span><span>ANUA</span><span>OLAPLEX</span></div><a className="text-link reveal" href="/shop">Shop all brands <Arrow /></a></section>
 
     <SiteFooter />
-    <CartPanel />
   </main>
 }

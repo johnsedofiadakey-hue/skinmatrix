@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Arrow, buyLabel, CartPanel, priceLabel, ProductVisual, SiteFooter, SiteHeader, useSite } from './storefront'
+import { Arrow, buyLabel, priceLabel, ProductVisual, SiteFooter, SiteHeader, useSite } from './storefront'
 import { canBuy, CATEGORIES } from './cloud/site.js'
 
 const FILTERS = [{ id: 'All', label: 'All products' }, ...CATEGORIES.map((id) => ({ id, label: id }))]
@@ -10,12 +10,12 @@ function startFilter() {
 }
 
 export default function ShopPage() {
-  const { products, cart, add, openCart } = useSite()
+  const { products, cart, add, openCart, openProduct } = useSite()
   const [filter, setFilter] = useState(startFilter)
   const [justAdded, setJustAdded] = useState(null)
   const visible = filter === 'All' ? products : products.filter((product) => product.category === filter)
 
-  useEffect(() => { document.title = 'Shop — SkinMatrix' }, [])
+  useEffect(() => { document.title = window.location.pathname.startsWith('/checkout') ? 'Checkout — SkinMatrix' : 'Shop — SkinMatrix' }, [])
   useEffect(() => {
     if (!justAdded) return undefined
     const timer = setTimeout(() => setJustAdded(null), 3500)
@@ -48,10 +48,10 @@ export default function ShopPage() {
         {visible.map((product) => {
           const inCart = cart[product.id] || 0
           return <article className="shop-card" key={product.id}>
-            <div className="shop-card-art"><ProductVisual product={product} /></div>
+            <button className="shop-card-art" onClick={() => openProduct(product.id)} aria-label={`See details for ${product.name}`}><ProductVisual product={product} /><span className="shop-card-peek">See details</span></button>
             <div className="shop-card-copy">
               <span className="eyebrow">{product.brand}{product.size ? ` · ${product.size}` : ''}</span>
-              <h2>{product.name}</h2>
+              <h2><button className="shop-card-name" onClick={() => openProduct(product.id)}>{product.name}</button></h2>
               {product.type ? <p className="shop-card-type">{product.type}</p> : null}
               <p>{product.description}</p>
               <div className="shop-card-buy">
@@ -74,6 +74,5 @@ export default function ShopPage() {
     </div>
 
     <SiteFooter />
-    <CartPanel />
   </main>
 }
