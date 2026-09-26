@@ -40,3 +40,14 @@
 @keyframes matrixDrift { from { transform: translate3d(-8px, 10px, 0) scale(.95); } to { transform: translate3d(14px, -15px, 0) scale(1.07); } }
 @keyframes matrixSpin { to { transform: rotate(338deg); } }
 @media (prefers-reduced-motion: reduce) { .fallback-orb, .fallback-ring { animation: none; } }
+
+/* Web icons (Lucide SVG). */
+.icon-wrap { display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
+.icon-wrap svg, .site-header svg, .shop-panel svg, .product-caption button svg { display: block; flex: none; }
+.header-actions button { display: inline-flex; align-items: center; gap: 6px; }
+.header-actions button svg { width: 17px; height: 17px; }
+.header-actions .menu { justify-content: center; }
+.header-actions .menu svg { width: 20px; height: 20px; }
+.panel-close, .bag-item button, .product-caption button { display: inline-flex; align-items: center; justify-content: center; }
+.panel-close svg { width: 22px; height: 22px; }
+.bag-item button svg, .product-caption button svg { width: 16px; height: 16px; }

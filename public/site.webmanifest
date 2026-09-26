@@ -1,0 +1,13 @@
+{
+  "name": "SkinMatrix",
+  "short_name": "SkinMatrix",
+  "description": "Skincare and supplements from brands you can trust.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fbfaf7",
+  "theme_color": "#1d1d50",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

@@ -19,6 +19,8 @@ import Customers from './views/Customers.jsx'
 import Products from './views/Products.jsx'
 import Deliveries from './views/Deliveries.jsx'
 import Staff from './views/Staff.jsx'
+import Website from './views/Website.jsx'
+import WebsiteOrders from './views/WebsiteOrders.jsx'
 
 const NAV = [
   { path: 'overview', label: 'Overview', icon: 'overview', allowed: () => true },
@@ -31,6 +33,8 @@ const NAV = [
   { path: 'payments', label: 'Payments', icon: 'payments', allowed: (staff) => can(staff, 'viewPayments') },
   { path: 'ledger', label: 'Sales', icon: 'ledger', allowed: (staff) => can(staff, 'viewLedger') },
   { path: 'staff', label: 'Staff', icon: 'staff', allowed: (staff) => can(staff, 'manageStaff') },
+  { path: 'website', label: 'Website editor', icon: 'globe', allowed: (staff) => can(staff, 'manageCatalog') },
+  { path: 'web-orders', label: 'Website orders', icon: 'cart', allowed: (staff) => can(staff, 'viewPayments') },
   { path: 'audit', label: 'Audit log', icon: 'audit', allowed: (staff) => can(staff, 'viewAudit') },
 ]
 
@@ -85,6 +89,8 @@ function Shell() {
   else if (section === 'ledger') page = <Ledger />
   else if (section === 'staff') page = <Staff />
   else if (section === 'audit') page = <Audit />
+  else if (section === 'website') page = <Website />
+  else if (section === 'web-orders') page = <WebsiteOrders />
 
   return <div className="ops">
     <DemoBanner />

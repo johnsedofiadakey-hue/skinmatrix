@@ -18,14 +18,14 @@
 .shop-title h2, .bag-view h2 { font: 500 clamp(52px, 6vw, 82px)/.87 'Outfit', sans-serif; letter-spacing:-.04em; }
 .shop-title p { margin-top: 18px; max-width: 230px; color: #5e5e7b; font-size: 13px; line-height: 1.6; }
 .shop-filters { display: flex; gap: 7px; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
-.shop-filters button { padding: 9px 13px; border: 1px solid var(--line); border-radius: 99px; background: transparent; font: 500 10px 'DM Mono', monospace; text-transform: uppercase; letter-spacing: .07em; }
+.shop-filters button { padding: 9px 13px; border: 1px solid var(--line); border-radius: 99px; background: transparent; font: 500 10px 'Outfit', sans-serif; text-transform: uppercase; letter-spacing: .07em; }
 .shop-filters button.active { color: white; border-color: var(--ink); background: var(--ink); }
 .shop-products { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 24px 0; }
 .shop-products article { padding: 10px; cursor: pointer; border: 1px solid transparent; background: #f0ecf2; transition: .25s; }
 .shop-products article.selected { border-color: var(--rose); background: #f7f1f5; }
 .shop-product-art { position: relative; height: 150px; overflow: hidden; }
 .shop-product-art .product-object { inset: 7px 0 0; width: 100%; height: 135px; transform: scale(.8); transform-origin: center bottom; }
-.shop-products span, .bag-item span { display: block; margin-top: 9px; color: #6a6988; font: 9px 'DM Mono', monospace; text-transform: uppercase; letter-spacing: .07em; }
+.shop-products span, .bag-item span { display: block; margin-top: 9px; color: #6a6988; font: 9px 'Outfit', sans-serif; text-transform: uppercase; letter-spacing: .07em; }
 .shop-products h3 { margin: 7px 0; font: 500 20px/.95 'Outfit', sans-serif; letter-spacing:-.03em; }
 .shop-products p { display: none; }
 .shop-products b { font-size: 11px; }

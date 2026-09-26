@@ -1,7 +1,7 @@
 .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .hero-actions button { border: 0; cursor: pointer; }
 .ghost { border: 1px solid var(--line); background: rgba(255,255,255,.45); }
-.hero-proof { display: block; margin-top: 21px; font: 500 9px 'DM Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: #6b6989; }
+.hero-proof { display: block; margin-top: 21px; font: 500 9px 'Outfit', sans-serif; letter-spacing: .1em; text-transform: uppercase; color: #6b6989; }
 .mobile-only-break { display: none; }
 .matrix-shelf-hero { min-height: 190svh; padding: 0; overflow: visible; background: radial-gradient(ellipse 66% 75% at 74% 47%, #eee8f2 0%, rgba(243,238,245,.52) 48%, transparent 76%), var(--ivory); }
 .hero-sticky { position: sticky; top: 0; height: 100svh; padding: 24vh 5.5vw 5vh; overflow: hidden; }
@@ -22,7 +22,7 @@
 .shelf-product-glow { position: absolute; z-index: 1; width: 82%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.88), rgba(251,211,226,.4) 42%, transparent 72%); }
 .shelf-product-copy { position: absolute; z-index: 5; left: 1%; bottom: -9px; min-width: 144px; padding: 9px 11px; background: rgba(255,255,255,.8); box-shadow: 0 12px 25px rgba(29,29,80,.11); backdrop-filter: blur(9px); }
 .shelf-product-copy span, .shelf-product-copy b, .shelf-product-copy small { display: block; }
-.shelf-product-copy span { margin-bottom: 5px; font: 500 8px 'DM Mono', monospace; letter-spacing: .09em; text-transform: uppercase; color: #777490; }
+.shelf-product-copy span { margin-bottom: 5px; font: 500 8px 'Outfit', sans-serif; letter-spacing: .09em; text-transform: uppercase; color: #777490; }
 .shelf-product-copy b { font-size: 11px; line-height: 1.2; }
 .shelf-product-copy small { margin-top: 2px; font-size: 9px; color: #67657e; }
 .shelf-product--collagen { left: 18%; top: 8%; width: 36%; height: 55%; }
@@ -35,9 +35,9 @@
 .shelf-product--anua .shelf-product-glow { background: radial-gradient(circle, rgba(255,255,255,.95), rgba(236,74,115,.34) 43%, transparent 72%); }
 .shelf-caption { position: absolute; z-index: 6; right: 2%; top: 67%; transform: translateY(24px); opacity: 0; visibility: hidden; text-align: right; }
 .shelf-caption span, .shelf-caption b { display: block; }
-.shelf-caption span { font: 500 9px 'DM Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: #777490; }
+.shelf-caption span { font: 500 9px 'Outfit', sans-serif; letter-spacing: .1em; text-transform: uppercase; color: #777490; }
 .shelf-caption b { margin-top: 6px; font: 500 clamp(22px,2.1vw,33px)/.9 'Outfit', sans-serif; letter-spacing:-.03em; }
-.shelf-callout { position: absolute; z-index: 6; right: 1%; bottom: 0; transform: translateX(16px); opacity: 0; visibility: hidden; font: 500 9px/1.5 'DM Mono', monospace; letter-spacing: .1em; text-transform: uppercase; }
+.shelf-callout { position: absolute; z-index: 6; right: 1%; bottom: 0; transform: translateX(16px); opacity: 0; visibility: hidden; font: 500 9px/1.5 'Outfit', sans-serif; letter-spacing: .1em; text-transform: uppercase; }
 .shelf-callout i { display: inline-block; width: 45px; height: 1px; margin: 0 0 4px 8px; background: var(--ink); }
 .matrix-shelf-hero .hero-note { bottom: 8vh; }
 .matrix-shelf-hero .scroll-prompt { bottom: 5vh; }
@@ -45,7 +45,7 @@
 .hero-product { position: absolute; z-index: 2; width: 43%; color: var(--ink); animation: productHover 6s ease-in-out infinite alternate; }
 .hero-serum { left: 7%; top: 16%; }
 .hero-collagen { right: 7%; bottom: 11%; animation-delay: -2.5s; }
-.hero-product-label { display: inline-block; padding: 7px 9px; border: 1px solid rgba(29,29,80,.13); border-radius: 99px; background: rgba(255,255,255,.66); font: 500 9px 'DM Mono', monospace; letter-spacing: .09em; text-transform: uppercase; }
+.hero-product-label { display: inline-block; padding: 7px 9px; border: 1px solid rgba(29,29,80,.13); border-radius: 99px; background: rgba(255,255,255,.66); font: 500 9px 'Outfit', sans-serif; letter-spacing: .09em; text-transform: uppercase; }
 .hero-product > div:last-child { position: absolute; z-index: 3; left: 4%; bottom: 6%; padding: 10px 12px; background: rgba(255,255,255,.82); box-shadow: 0 10px 24px rgba(29,29,80,.08); backdrop-filter: blur(10px); }
 .hero-product b, .hero-product small { display: block; }
 .hero-product b { font-size: 10px; letter-spacing: .03em; }
@@ -53,7 +53,7 @@
 .hero-thread { position: absolute; z-index: 0; width: 75%; height: 40%; left: 13%; top: 29%; border: 1px solid rgba(147,118,186,.36); border-radius: 50%; transform: rotate(-17deg); animation: threadShift 12s linear infinite; }
 .thread-b { top: 38%; transform: rotate(29deg); border-color: rgba(207,124,153,.32); animation-direction: reverse; animation-duration: 15s; }
 .thread-c { top: 24%; transform: rotate(63deg); border-color: rgba(29,29,80,.15); animation-duration: 18s; }
-.hero-connection { position: absolute; z-index: 3; top: 48%; left: 50%; padding: 9px; transform: translate(-50%,-50%); background: var(--ink); color: white; border-radius: 50%; aspect-ratio: 1; display: grid; place-content: center; text-align: center; font: 500 8px/1.3 'DM Mono', monospace; letter-spacing: .05em; text-transform: uppercase; }
+.hero-connection { position: absolute; z-index: 3; top: 48%; left: 50%; padding: 9px; transform: translate(-50%,-50%); background: var(--ink); color: white; border-radius: 50%; aspect-ratio: 1; display: grid; place-content: center; text-align: center; font: 500 8px/1.3 'Outfit', sans-serif; letter-spacing: .05em; text-transform: uppercase; }
 .brand-product-visual { position: relative; width: 100%; height: 100%; display: grid; place-items: center; overflow: hidden; }
 .brand-product-visual .product-halo { position: absolute; width: 72%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.95) 0%, rgba(245,222,237,.75) 38%, transparent 71%); filter: blur(1px); }
 .brand-product-visual.orange .product-halo { background: radial-gradient(circle, #fff6dd 0%, #f2c28699 42%, transparent 72%); }
@@ -149,7 +149,7 @@
 .shelf-product-copy { left: 7%; bottom: 0; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; background: rgba(21,19,61,.48); box-shadow: 0 11px 23px rgba(0,0,0,.18); color: #fff; backdrop-filter: blur(12px); }
 .shelf-product-copy span { color: #c6c1df; }.shelf-product-copy small { color: #e6e1f0; }
 .shelf-product--collagen { left: 8%; top: 11%; }.shelf-product--magnesium { left: 68%; top: 11%; right: auto; }.shelf-product--wellwoman { left: 12%; top: 55%; bottom: auto; }.shelf-product--anua { left: 70%; top: 57%; right: auto; bottom: auto; }
-.hero-scroll-note { position: absolute; z-index: 8; left: 50%; bottom: 8vh; transform: translate(-50%, 15px); visibility: hidden; opacity: 0; font: 500 10px 'DM Mono', monospace; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+.hero-scroll-note { position: absolute; z-index: 8; left: 50%; bottom: 8vh; transform: translate(-50%, 15px); visibility: hidden; opacity: 0; font: 500 10px 'Outfit', sans-serif; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
 .hero-scroll-note em { color: var(--rose); font-style: normal; }
 .matrix-shelf-hero .hero-kicker, .matrix-shelf-hero .hero-copy, .matrix-shelf-hero .hero-scroll-note, .matrix-shelf-hero .scroll-prompt { color: #fff; }
 .matrix-shelf-hero .hero-copy p { color: #d7d2e8; }
@@ -176,7 +176,7 @@
 .hero-payoff h2 { margin: 15px 0 16px; color: #fff; font-size: clamp(54px, 5.8vw, 88px); }
 .hero-payoff p { max-width: 340px; margin: 0 auto 20px; font-size: 13px; line-height: 1.55; }
 .hero-focus-controls { display: flex; max-width: 360px; justify-content: center; flex-wrap: wrap; gap: 7px; }
-.hero-focus-controls button { padding: 8px 10px; border: 1px solid rgba(255,255,255,.2); border-radius: 999px; background: rgba(255,255,255,.06); color: #e8e3f1; font: 500 9px 'DM Mono', monospace; letter-spacing: .04em; transition: .25s ease; }
+.hero-focus-controls button { padding: 8px 10px; border: 1px solid rgba(255,255,255,.2); border-radius: 999px; background: rgba(255,255,255,.06); color: #e8e3f1; font: 500 9px 'Outfit', sans-serif; letter-spacing: .04em; transition: .25s ease; }
 .hero-focus-controls button:hover, .hero-focus-controls button.active { border-color: rgba(255,255,255,.9); background: #fff5f7; color: var(--ink); transform: translateY(-2px); }
 .hero-payoff-shop { margin-top: 19px; padding: 12px 16px; font-size: 11px; }
 .hero-threads { position: absolute; z-index: 2; inset: 0; pointer-events: none; }
@@ -198,9 +198,9 @@
   .site-header { height: 68px; padding: 0 20px; }.site-header .brand img { width: 135px; }.header-actions { gap: 0; }.header-actions .menu { position: relative; z-index: 12; width: 42px; height: 42px; border: 1px solid rgba(255,255,255,.28); border-radius: 50%; background: rgba(23,23,65,.28); color: #fff; font-size: 20px; line-height: 1; }
   .mobile-nav { position: absolute; z-index: 11; top: 60px; left: 16px; right: 16px; display: grid; gap: 3px; padding: 11px; border: 1px solid rgba(255,255,255,.2); border-radius: 13px; background: rgba(22,20,62,.94); box-shadow: 0 18px 40px rgba(0,0,0,.25); backdrop-filter: blur(18px); visibility: hidden; opacity: 0; transform: translateY(-12px); transition: .25s ease; }
   .mobile-nav.open { visibility: visible; opacity: 1; transform: none; }.mobile-nav a, .mobile-nav button { min-height: 43px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: #fff; text-align: left; font: 600 12px 'Outfit', sans-serif; }.mobile-nav button { cursor: pointer; }.mobile-nav a:active, .mobile-nav button:active { background: rgba(255,255,255,.12); }
-  .matrix-shelf-hero { min-height: 980px; }.hero-sticky { height: 980px; }.matrix-shelf-hero .hero-kicker { top: 92px; font-size: 7px; letter-spacing: .12em; }.matrix-shelf-hero .hero-copy { top: 285px; width: calc(100% - 32px); }.matrix-shelf-hero .hero-copy h1 { font-size: clamp(51px, 14.2vw, 61px); line-height: .92; letter-spacing: -.045em; }.matrix-shelf-hero .hero-copy p { width: min(310px, 100%); margin: 18px auto 21px; font-size: 13px; line-height: 1.58; }.hero-actions .button { min-height: 46px; padding: 13px 15px; font-size: 11px; }.mobile-focus-controls { display: flex; width: 100%; max-width: 300px; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 15px auto 0; }.mobile-focus-controls button { min-height: 33px; padding: 7px 9px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; background: rgba(255,255,255,.07); color: #efeaf7; font: 500 8px 'DM Mono', monospace; letter-spacing: .035em; }.mobile-focus-controls button.active { border-color: rgba(255,255,255,.9); background: #fff5f7; color: var(--ink); }.matrix-shelf-hero .hero-proof { display: none; }
+  .matrix-shelf-hero { min-height: 980px; }.hero-sticky { height: 980px; }.matrix-shelf-hero .hero-kicker { top: 92px; font-size: 7px; letter-spacing: .12em; }.matrix-shelf-hero .hero-copy { top: 285px; width: calc(100% - 32px); }.matrix-shelf-hero .hero-copy h1 { font-size: clamp(51px, 14.2vw, 61px); line-height: .92; letter-spacing: -.045em; }.matrix-shelf-hero .hero-copy p { width: min(310px, 100%); margin: 18px auto 21px; font-size: 13px; line-height: 1.58; }.hero-actions .button { min-height: 46px; padding: 13px 15px; font-size: 11px; }.mobile-focus-controls { display: flex; width: 100%; max-width: 300px; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 15px auto 0; }.mobile-focus-controls button { min-height: 33px; padding: 7px 9px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; background: rgba(255,255,255,.07); color: #efeaf7; font: 500 8px 'Outfit', sans-serif; letter-spacing: .035em; }.mobile-focus-controls button.active { border-color: rgba(255,255,255,.9); background: #fff5f7; color: var(--ink); }.matrix-shelf-hero .hero-proof { display: none; }
   .shelf-aurora { top: 53%; }.shelf-ring-a { top: 55%; }.shelf-ring-b { top: 57%; }.shelf-product--collagen { left: -7% !important; top: 53% !important; right: auto !important; bottom: auto !important; width: 44% !important; height: 27% !important; }.shelf-product--magnesium { left: 64% !important; top: 53% !important; right: auto !important; bottom: auto !important; width: 43% !important; height: 27% !important; }.shelf-product--wellwoman { left: 0 !important; top: 73% !important; right: auto !important; bottom: auto !important; width: 42% !important; height: 25% !important; }.shelf-product--anua { left: 67% !important; top: 73% !important; right: auto !important; bottom: auto !important; width: 34% !important; height: 25% !important; }
-  .hero-sticky.focus-active .shelf-product { opacity: .1; filter: grayscale(.65) saturate(.35); transition: left .5s cubic-bezier(.2,.8,.2,1), top .5s cubic-bezier(.2,.8,.2,1), width .5s cubic-bezier(.2,.8,.2,1), height .5s cubic-bezier(.2,.8,.2,1), opacity .35s ease, filter .35s ease; }.hero-sticky.focus-active .shelf-product.is-focus { opacity: 1; filter: none; z-index: 8; }.hero-sticky[data-focus="Glow"] .shelf-product--collagen { left: 1% !important; top: 55% !important; width: 49% !important; height: 30% !important; }.hero-sticky[data-focus="Glow"] .shelf-product--anua { left: 50% !important; top: 56% !important; width: 43% !important; height: 30% !important; }.hero-sticky[data-focus="Sleep"] .shelf-product--magnesium, .hero-sticky[data-focus="Energy"] .shelf-product--magnesium { left: 21% !important; top: 55% !important; width: 58% !important; height: 32% !important; }.hero-sticky[data-focus="Hair"] .shelf-product--collagen { left: 21% !important; top: 55% !important; width: 58% !important; height: 32% !important; }.hero-sticky[data-focus="Women’s Wellness"] .shelf-product--wellwoman { left: 14% !important; top: 55% !important; width: 70% !important; height: 34% !important; }
+  .hero-sticky.focus-active .shelf-product { opacity: .1; filter: grayscale(.65) saturate(.35); transition: left .5s cubic-bezier(.2,.8,.2,1), top .5s cubic-bezier(.2,.8,.2,1), width .5s cubic-bezier(.2,.8,.2,1), height .5s cubic-bezier(.2,.8,.2,1), opacity .35s ease, filter .35s ease; }.hero-sticky.focus-active .shelf-product.is-focus { opacity: 1; filter: none; z-index: 8; }.hero-sticky[data-focus="Glow"] .shelf-product--collagen { left: 1% !important; top: 55% !important; width: 49% !important; height: 30% !important; }.hero-sticky[data-focus="Glow"] .shelf-product--anua { left: 50% !important; top: 56% !important; width: 43% !important; height: 30% !important; }.hero-sticky[data-focus="Sleep"] .shelf-product--magnesium, .hero-sticky[data-focus="Energy"] .shelf-product--magnesium { left: 21% !important; top: 55% !important; width: 58% !important; height: 32% !important; }.hero-sticky[data-focus="Hair"] .shelf-product--collagen { left: 21% !important; top: 55% !important; width: 58% !important; height: 32% !important; }.hero-sticky[data-focus="Women’s Health"] .shelf-product--wellwoman { left: 14% !important; top: 55% !important; width: 70% !important; height: 34% !important; }
   .eyebrow { font-size: 8px; letter-spacing: .11em; }.io-heading h2, .section-top h2, .matrix-copy h2, .product-heading h2, .ingredient-top h2, .real-copy h2, .edit-title h2 { line-height: .94; letter-spacing:-.04em; }.io-heading p, .section-top p, .product-heading p, .ingredient-top p, .real-copy>p, .edit-title p { font-size: 14px; line-height: 1.6; }.concern-list button { min-height: 58px; }.map-node { min-height: 36px; }.product-caption p { font-size: 13px; line-height: 1.45; }
 }
 
@@ -248,4 +248,22 @@
     transform: translateX(-50%);
     background: rgba(33, 31, 84, .16);
   }
+}
+
+/* Phones: one screen, headline in the middle, the four products floating around it (like the desktop scatter). */
+@media (max-width: 760px) {
+  /* The next section climbs over the hero (margin-top: -100svh), so the hero is one screen taller than it looks. */
+  .matrix-shelf-hero { min-height: calc(100svh + max(100svh, 720px)); }
+  .matrix-shelf-hero .hero-sticky { height: max(100svh, 720px); }
+  .matrix-shelf-hero .hero-kicker { display: none; }
+  .matrix-shelf-hero .hero-copy { top: 50%; transform: translate(-50%, -50%); }
+  .matrix-shelf-hero .hero-proof { display: none; }
+  .matrix-shelf-hero .shelf-aurora, .matrix-shelf-hero .shelf-ring-a, .matrix-shelf-hero .shelf-ring-b { top: 50%; }
+  .matrix-shelf-hero .hero-sticky[data-focus] .shelf-product { width: 38% !important; height: 21% !important; right: auto !important; bottom: auto !important; }
+  .matrix-shelf-hero .hero-sticky[data-focus] .shelf-product--collagen { left: 3% !important; top: 11.5% !important; }
+  .matrix-shelf-hero .hero-sticky[data-focus] .shelf-product--magnesium { left: 59% !important; top: 11.5% !important; }
+  .matrix-shelf-hero .hero-sticky[data-focus] .shelf-product--wellwoman { left: 3% !important; top: 73% !important; }
+  .matrix-shelf-hero .hero-sticky[data-focus] .shelf-product--anua { left: 59% !important; top: 73% !important; }
+  .matrix-shelf-hero .hero-sticky[data-focus] .shelf-product img { max-height: 100%; }
+  .matrix-shelf-hero .hero-sticky .shelf-product-copy { display: none; }
 }

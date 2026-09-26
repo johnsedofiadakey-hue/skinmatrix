@@ -30,6 +30,8 @@ const ICONS = {
   staff: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21v-1a6 6 0 016-6h4a6 6 0 016 6v1M17 8l2 2 3-3',
   tag: 'M3 12V3h9l9 9-9 9zM7.5 7.5h.01',
   undo: 'M9 14L4 9l5-5M4 9h11a5 5 0 010 10h-3',
+  globe: 'M12 21a9 9 0 100-18 9 9 0 000 18zM3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18',
+  cart: 'M3 4h2l2.4 11h11.2L21 7H6.2M9 20a1 1 0 100-2 1 1 0 000 2zM18 20a1 1 0 100-2 1 1 0 000 2z',
 }
 
 export function Icon({ name, size = 18, className = '' }) {
