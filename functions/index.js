@@ -21,7 +21,13 @@ const auth = getAuth()
 const PAYSTACK_SECRET = defineSecret('PAYSTACK_SECRET_KEY')
 const SMS_KEY = defineSecret('ARKESEL_API_KEY')
 const SECRETS = [PAYSTACK_SECRET, SMS_KEY]
-const readSecrets = () => ({ paystack: PAYSTACK_SECRET.value() || '', smsKey: SMS_KEY.value() || '' })
+// A placeholder (anything that is not a real key, e.g. "none") counts as not set: Paystack payments are then
+// checked by hand and no SMS is sent.
+const readSecrets = () => {
+  const paystack = String(PAYSTACK_SECRET.value() || '')
+  const smsKey = String(SMS_KEY.value() || '')
+  return { paystack: /^sk_(live|test)_/.test(paystack) ? paystack : '', smsKey: smsKey.length >= 16 ? smsKey : '' }
+}
 
 // Same region as Firestore. A few instances at most is plenty for one shop and keeps costs near zero.
 setGlobalOptions({ region: 'europe-west2', maxInstances: 5, memory: '256MiB' })
