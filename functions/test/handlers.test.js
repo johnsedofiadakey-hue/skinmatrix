@@ -365,14 +365,14 @@ describe('website checkout on the server', () => {
     await content({})
     await settings.saveShopSettings(ctx(OWNER), { sms: { enabled: true, senderId: 'SkinMatrix', orderPlaced: true, orderUpdates: true } })
     const sent = []
-    const fetcher = async (url, init) => { sent.push({ url, body: JSON.parse(init.body), key: init.headers['api-key'] }); return { ok: true, status: 200, json: async () => ({ status: 'success' }) } }
-    const order = await web.placeWebOrder({ db, now: NOW, secrets: { smsKey: 'arkesel-key' }, fetch: fetcher }, { requestId: rid(), payment: 'pay_later', details, lines: [{ id: 'serum', qty: 1 }] })
-    expect(sent[0]).toMatchObject({ url: 'https://sms.arkesel.com/api/v2/sms/send', key: 'arkesel-key', body: { sender: 'SkinMatrix', recipients: ['233241234567'] } })
+    const fetcher = async (url, init) => { sent.push({ url, body: JSON.parse(init.body) }); return { ok: true, status: 200, json: async () => ({ status: 'success', code: '2000' }) } }
+    const order = await web.placeWebOrder({ db, now: NOW, secrets: { smsKey: 'mnotify-key' }, fetch: fetcher }, { requestId: rid(), payment: 'pay_later', details, lines: [{ id: 'serum', qty: 1 }] })
+    expect(sent[0]).toMatchObject({ url: 'https://api.mnotify.com/api/sms/quick?key=mnotify-key', body: { sender: 'SkinMatrix', recipient: ['0241234567'], is_schedule: false } })
     expect(sent[0].body.message).toContain(order.ref)
-    await h.updateWebOrder({ ...ctx(STAFF), secrets: { smsKey: 'arkesel-key' }, fetch: fetcher }, { orderId: order.ref, action: 'confirm' })
+    await h.updateWebOrder({ ...ctx(STAFF), secrets: { smsKey: 'mnotify-key' }, fetch: fetcher }, { orderId: order.ref, action: 'confirm' })
     expect(sent[1].body.message).toContain('confirmed')
     const down = async () => { throw new Error('network down') }
-    const second = await web.placeWebOrder({ db, now: NOW, secrets: { smsKey: 'arkesel-key' }, fetch: down }, { requestId: rid(), payment: 'pay_later', details, lines: [{ id: 'serum', qty: 1 }] })
+    const second = await web.placeWebOrder({ db, now: NOW, secrets: { smsKey: 'mnotify-key' }, fetch: down }, { requestId: rid(), payment: 'pay_later', details, lines: [{ id: 'serum', qty: 1 }] })
     expect(second.ref).toMatch(/^SM-/)
     const log = (await db.collection('smsLog').get()).docs.map((doc) => doc.data())
     expect(log.filter((row) => row.ok)).toHaveLength(2)

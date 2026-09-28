@@ -1,13 +1,13 @@
-// Text messages to customers through Arkesel (a Ghana SMS provider). Sending never blocks or undoes a sale or
-// an order: a failed text is logged in smsLog and the shop carries on. Nothing is sent unless the owner turns
-// SMS on in Settings and the ARKESEL_API_KEY secret is set.
+// Text messages to customers through mNotify (a Ghana SMS provider, BMS API v2 "quick SMS"). Sending never
+// blocks or undoes a sale or an order: a failed text is logged in smsLog and the shop carries on. Nothing is
+// sent unless the owner turns SMS on in Settings and the MNOTIFY_API_KEY secret is set.
 import { logger } from 'firebase-functions'
 import { normalizePhone } from './core/sale.js'
 import { businessDay } from './core/time.js'
 
 export const DEFAULT_SMS = { enabled: false, senderId: 'SkinMatrix', orderPlaced: true, orderUpdates: true, saleReceipt: false }
 
-const ARKESEL_URL = 'https://sms.arkesel.com/api/v2/sms/send'
+const MNOTIFY_URL = 'https://api.mnotify.com/api/sms/quick'
 const money = (pesewas) => `GHS ${(pesewas / 100).toFixed(2)}`
 
 export function cleanSms(input) {
@@ -44,15 +44,16 @@ export async function sendSms(ctx, settings, { to, kind, ref, text }) {
   const key = ctx.secrets?.smsKey
   const phone = normalizePhone(to)
   if (!sms.enabled || !key || !phone || !text) return false
+  const local = `0${phone.slice(3)}` // mNotify takes Ghana numbers as 0XXXXXXXXX
   const log = { at: ctx.now, day: businessDay(ctx.now), kind, ref: ref || null, to: phone, text, ok: false, error: null }
   try {
-    const response = await (ctx.fetch || fetch)(ARKESEL_URL, {
+    const response = await (ctx.fetch || fetch)(`${MNOTIFY_URL}?key=${encodeURIComponent(key)}`, {
       method: 'POST',
-      headers: { 'api-key': key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sender: sms.senderId, message: text, recipients: [phone] }),
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ recipient: [local], sender: sms.senderId, message: text, is_schedule: false, schedule_date: '' }),
     })
     const body = await response.json().catch(() => ({}))
-    log.ok = response.ok && body?.status === 'success'
+    log.ok = response.ok && (body?.status === 'success' || String(body?.code) === '2000')
     if (!log.ok) log.error = String(body?.message || `HTTP ${response.status}`).slice(0, 200)
   } catch (error) {
     log.error = String(error?.message || error).slice(0, 200)

@@ -17,9 +17,9 @@ initializeApp()
 const db = getFirestore()
 const auth = getAuth()
 
-// Set with `firebase functions:secrets:set PAYSTACK_SECRET_KEY` (and ARKESEL_API_KEY for SMS). Never in the code.
+// Set with `firebase functions:secrets:set PAYSTACK_SECRET_KEY` (and MNOTIFY_API_KEY for SMS). Never in the code.
 const PAYSTACK_SECRET = defineSecret('PAYSTACK_SECRET_KEY')
-const SMS_KEY = defineSecret('ARKESEL_API_KEY')
+const SMS_KEY = defineSecret('MNOTIFY_API_KEY')
 const SECRETS = [PAYSTACK_SECRET, SMS_KEY]
 // A placeholder (anything that is not a real key, e.g. "none") counts as not set: Paystack payments are then
 // checked by hand and no SMS is sent.

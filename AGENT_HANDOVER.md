@@ -40,7 +40,7 @@ The emulators need Java 21: `export JAVA_HOME=/opt/homebrew/opt/openjdk@21 PATH=
 
 Pure rules: `src/core/{rules,sale,stock,time}.js`. The client imports these too (single source of truth).
 
-Other server modules: `src/web.js` (website checkout, no sign-in), `src/shifts.js` (cash drawers), `src/settings.js` (owner settings), `src/sms.js` (Arkesel), `src/shared.js` (helpers every command uses). Pure rules also in `src/core/{order,shift,tax}.js`.
+Other server modules: `src/web.js` (website checkout, no sign-in), `src/shifts.js` (cash drawers), `src/settings.js` (owner settings), `src/sms.js` (mNotify), `src/shared.js` (helpers every command uses). Pure rules also in `src/core/{order,shift,tax}.js`.
 
 **Commands:** `placeWebOrder`, `verifyWebPayment` (public), `paystackWebhook` (HTTP), `openShift`, `cashMovement`, `closeShift`, `saveShopSettings`, `completeSale`, `voidSale`, `returnItems`, `updateWebOrder` (confirm takes stock; cancel puts it back), `receiveDelivery`, `adjustStock`, `writeOffExpired`, `submitStockCount` (refused with `details.stale` if stock moved mid-count), `saveProductSetup`, `saveSupplier`, `claimOwner`, `createStaff` (returns a one-time 12-character password), `updateStaff` (turning someone off disables Auth and revokes tokens; there is always one active owner), `setMyPin`, `recordSignIn`.
 
@@ -50,9 +50,9 @@ Other server modules: `src/web.js` (website checkout, no sign-in), `src/shifts.j
 
 **Offline till:** admin Firestore uses persistent cache. If the device is offline or `completeSale` fails with a connection error, the sale is queued in localStorage (`skinmatrix-offline-sales-{uid}`, `live/offlineSales.js`) with the *same* requestId, and a provisional receipt prints. `LiveProvider` retries every 30 s and when back online, sending `offline: { at, shiftId, clientTotal }`. The server keeps the real sale time, charges what the customer paid (the difference from today's price goes in `sale.offline.adjustment` and the audit log), puts cash on the original drawer (`lateCash` if already closed), and refuses anything older than 7 days. Refused sales show on POS for retry, or a manager can remove them from that device. Discounts needing a PIN can't be done offline. Not solved: reloading the page while offline (no service worker).
 
-**Settings (owner):** `settings/shop`: `tax { registered, tin, vatBp, nhilBp, getfundBp }` (defaults 15/2.5/2.5% on the same base; **confirm with the accountant**) and `sms { enabled, senderId, orderPlaced, orderUpdates, saleReceipt }`. Sales store `tax` (a breakdown of the tax-inclusive total) and receipts print it with the TIN. SMS goes through Arkesel (`ARKESEL_API_KEY` secret) after the transaction and never fails the order or sale. Every attempt is logged in `smsLog`.
+**Settings (owner):** `settings/shop`: `tax { registered, tin, vatBp, nhilBp, getfundBp }` (defaults 15/2.5/2.5% on the same base; **confirm with the accountant**) and `sms { enabled, senderId, orderPlaced, orderUpdates, saleReceipt }`. Sales store `tax` (a breakdown of the tax-inclusive total) and receipts print it with the TIN. SMS goes through mNotify (`MNOTIFY_API_KEY` secret) after the transaction and never fails the order or sale. Every attempt is logged in `smsLog`.
 
-**Secrets:** `firebase functions:secrets:set PAYSTACK_SECRET_KEY` and `ARKESEL_API_KEY` before deploying (deploy asks for them if missing; use any placeholder for SMS until there's an Arkesel account). The local emulator reads `functions/.secret.local` (gitignored). Paystack dashboard → Webhook URL: `https://europe-west2-skinmatrixgh.cloudfunctions.net/paystackWebhook`.
+**Secrets:** `firebase functions:secrets:set PAYSTACK_SECRET_KEY` and `MNOTIFY_API_KEY` before deploying (deploy asks for them if missing; use any placeholder for SMS until there's an mNotify account). The local emulator reads `functions/.secret.local` (gitignored). Paystack dashboard → Webhook URL: `https://europe-west2-skinmatrixgh.cloudfunctions.net/paystackWebhook`.
 
 **Approvals:** staff actions above their limit get `approval_required`. `LiveProvider.call()` opens `ApprovalDialog`: a manager or the owner picks their name and types their PIN on the cashier's screen, and the call is retried with `approval: {approverId, pin}`. PINs are scrypt-hashed in `staffSecrets/{uid}`; 5 wrong tries lock that approver for 15 minutes.
 
@@ -102,7 +102,7 @@ Other server modules: `src/web.js` (website checkout, no sign-in), `src/shifts.j
   - close drawer short by GHS 10 with a note;
   - storefront pay-later order placed through `placeWebOrder` and shown in Website orders;
   - Settings page; drawer page at 375 px.
-- **Not verified:** real Paystack (test keys) end to end with the webhook, a real Arkesel SMS, deploy.
+- **Not verified:** real Paystack (test keys) end to end with the webhook, a real mNotify SMS, deploy.
 
 ## Open work, in priority order
 1. Deploy (ask first): set both secrets, `npm run build && firebase deploy --only functions,firestore:rules,hosting`, add the Paystack webhook URL. Then place a Paystack **test-mode** order to check verify + webhook.

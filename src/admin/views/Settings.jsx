@@ -39,7 +39,7 @@ function SettingsForm({ settings }) {
     <Guide id="settings" title="Shop settings" steps={[
       'Taxes: turn this on only if the shop is registered for VAT. Receipts then show the TIN and how much of each price is VAT, NHIL and GETFund.',
       'Check the rates with your accountant or GRA. Prices on the shelf already include the taxes.',
-      'Text messages need an Arkesel account. The developer adds its API key to the server once; then you can turn messages on here.',
+      'Text messages need an mNotify account. The developer adds its API key to the server once; then you can turn messages on here.',
     ]} />
     <Card title="Taxes on receipts">
       <div className="stack">
@@ -66,11 +66,11 @@ function SettingsForm({ settings }) {
       <div className="stack">
         <label className="check"><input type="checkbox" checked={sms.enabled} onChange={(event) => setSms({ ...sms, enabled: event.target.checked })} /> Send text messages</label>
         {sms.enabled ? <>
-          <label className="field"><span>Sender name <em>3–11 letters, registered with Arkesel</em></span><input value={sms.senderId} maxLength={11} onChange={(event) => setSms({ ...sms, senderId: event.target.value })} /></label>
+          <label className="field"><span>Sender name <em>3–11 letters, registered with mNotify</em></span><input value={sms.senderId} maxLength={11} onChange={(event) => setSms({ ...sms, senderId: event.target.value })} /></label>
           <label className="check"><input type="checkbox" checked={sms.orderPlaced} onChange={(event) => setSms({ ...sms, orderPlaced: event.target.checked })} /> Website order received (and online payment received)</label>
           <label className="check"><input type="checkbox" checked={sms.orderUpdates} onChange={(event) => setSms({ ...sms, orderUpdates: event.target.checked })} /> Website order confirmed, ready, on the way or cancelled</label>
           <label className="check"><input type="checkbox" checked={sms.saleReceipt} onChange={(event) => setSms({ ...sms, saleReceipt: event.target.checked })} /> Receipt for shop sales when the cashier types the customer’s phone</label>
-          <p className="muted small">Each message costs a little Arkesel credit. If a message fails, the order or sale still goes through; failures show below.</p>
+          <p className="muted small">Each message costs a little mNotify credit. If a message fails, the order or sale still goes through; failures show below.</p>
         </> : null}
       </div>
     </Card>
