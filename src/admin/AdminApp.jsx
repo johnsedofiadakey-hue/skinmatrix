@@ -1,188 +1,163 @@
 import { useState } from 'react'
-import { OpsProvider } from './OpsContext.jsx'
+import { signOut } from 'firebase/auth'
+import { LiveProvider, useAccount } from './LiveProvider.jsx'
 import { useHashRoute, useNow, useOps } from './hooks.js'
-import { can } from './lib/permissions.js'
-import { orderAttention } from './lib/attention.js'
-import { expiryStatus } from './lib/stock.js'
+import { auth, callFunction, readError } from './live/firebase.js'
+import { ROLE_LABEL } from '../../functions/src/core/rules.js'
 import { Dialog, Icon } from './components/ui.jsx'
-import { fmtFull, ROLE_LABEL } from './components/format.js'
+import { fmtFull } from './components/format.js'
 import SignIn from './views/SignIn.jsx'
-import Overview from './views/Overview.jsx'
-import Pos from './views/Pos.jsx'
-import Orders from './views/Orders.jsx'
-import OrderDetail from './views/OrderDetail.jsx'
-import Inventory from './views/Inventory.jsx'
-import Payments from './views/Payments.jsx'
-import Ledger from './views/Ledger.jsx'
-import Audit from './views/Audit.jsx'
-import Customers from './views/Customers.jsx'
-import Products from './views/Products.jsx'
-import Deliveries from './views/Deliveries.jsx'
-import Staff from './views/Staff.jsx'
+import Home from './views/Home.jsx'
+import Sell from './views/Sell.jsx'
+import Sales from './views/Sales.jsx'
+import WebsiteOrders, { useWebOrders } from './views/WebsiteOrders.jsx'
+import Stock from './views/Stock.jsx'
+import Reports from './views/Reports.jsx'
+import Setup from './views/Setup.jsx'
+import Team from './views/Team.jsx'
 import Website from './views/Website.jsx'
-import WebsiteOrders from './views/WebsiteOrders.jsx'
+import Account from './views/Account.jsx'
+import Help from './views/Help.jsx'
 
-const NAV = [
-  { path: 'overview', label: 'Overview', icon: 'overview', allowed: () => true },
-  { path: 'pos', label: 'Point of sale', icon: 'pos', allowed: (staff) => can(staff, 'pos') },
-  { path: 'orders', label: 'Orders', icon: 'orders', allowed: (staff) => can(staff, 'viewOrders') },
-  { path: 'inventory', label: 'Stock', icon: 'inventory', allowed: (staff) => can(staff, 'viewInventory') },
-  { path: 'customers', label: 'Customers', icon: 'customers', allowed: (staff) => can(staff, 'viewCustomers') },
-  { path: 'products', label: 'Products', icon: 'products', allowed: (staff) => can(staff, 'manageCatalog') || can(staff, 'viewCosts') },
-  { path: 'deliveries', label: 'Deliveries', icon: 'delivery', allowed: (staff) => can(staff, 'receiveDeliveries') },
-  { path: 'payments', label: 'Payments', icon: 'payments', allowed: (staff) => can(staff, 'viewPayments') },
-  { path: 'ledger', label: 'Sales', icon: 'ledger', allowed: (staff) => can(staff, 'viewLedger') },
-  { path: 'staff', label: 'Staff', icon: 'staff', allowed: (staff) => can(staff, 'manageStaff') },
-  { path: 'website', label: 'Website editor', icon: 'globe', allowed: (staff) => can(staff, 'manageCatalog') },
-  { path: 'web-orders', label: 'Website orders', icon: 'cart', allowed: (staff) => can(staff, 'viewPayments') },
-  { path: 'audit', label: 'Audit log', icon: 'audit', allowed: (staff) => can(staff, 'viewAudit') },
+// Every page, who may open it, and where it sits: in the phone bar at the bottom (tab) or under More.
+const PAGES = [
+  { path: 'home', label: 'Home', icon: 'home', tab: true },
+  { path: 'sell', label: 'POS', icon: 'pos', action: 'sell', tab: true },
+  { path: 'sales', label: 'POS history', short: 'History', icon: 'sale', action: 'viewSales', tab: true },
+  { path: 'orders', label: 'Website orders', short: 'Web orders', icon: 'cart', action: 'webOrders', tab: true },
+  { path: 'stock', label: 'Stock', icon: 'inventory', action: 'viewStock' },
+  { path: 'reports', label: 'Reports', icon: 'ledger', action: 'reports' },
+  { path: 'setup', label: 'Products', icon: 'products', action: 'products' },
+  { path: 'team', label: 'Team', icon: 'staff', action: 'staff' },
+  { path: 'website', label: 'Website editor', icon: 'globe', action: 'website' },
+  { path: 'account', label: 'Account', icon: 'user' },
+  { path: 'help', label: 'Help', icon: 'help' },
 ]
 
 export default function AdminApp() {
-  return <OpsProvider><Shell /></OpsProvider>
+  const account = useAccount()
+  if (account.status === 'loading') return <div className="ops"><main className="admin-auth-state"><span className="eyebrow">SkinMatrix</span><p>Checking your sign-in…</p></main></div>
+  if (account.status === 'signedOut') return <div className="ops"><SignIn /></div>
+  if (account.status === 'setup') return <div className="ops"><FirstSetup email={account.user.email} /></div>
+  if (account.status === 'notStaff' || account.status === 'disabled') return <div className="ops"><NoAccess account={account} /></div>
+  return <div className="ops"><LiveProvider account={account}><Shell /></LiveProvider></div>
 }
 
-function DemoBanner() {
-  const { resetDemo, staff } = useOps()
-  const [confirming, setConfirming] = useState(false)
-  return <div className="demo-banner" role="note">
-    <span className="demo-flag">Demo prototype</span>
-    <span className="demo-text">Local sample data stored in this browser only. No real payments, stock, orders or staff accounts.</span>
-    {staff ? confirming
-      ? <span className="demo-confirm">Discard all demo changes? <button type="button" onClick={() => { resetDemo(); setConfirming(false) }}>Reset</button><button type="button" onClick={() => setConfirming(false)}>Cancel</button></span>
-      : <button type="button" className="demo-reset" onClick={() => setConfirming(true)}><Icon name="reset" size={14} />Reset demo data</button>
-      : null}
-  </div>
+function AuthPanel({ eyebrow, title, children }) {
+  return <main className="signin-clean">
+    <a className="signin-back" href="/">← Back to SkinMatrix</a>
+    <section className="signin-panel signin-panel--clean">
+      <div className="signin-brand"><span className="brand-name">SkinMatrix</span><span className="brand-sub">Shop system</span></div>
+      <div className="signin-intro"><span className="eyebrow">{eyebrow}</span><h1>{title}</h1></div>
+      {children}
+    </section>
+  </main>
+}
+
+function FirstSetup({ email }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const claim = async () => {
+    setBusy(true); setError('')
+    try { await callFunction('claimOwner', {}) } catch (cause) { setError(readError(cause).message); setBusy(false) }
+  }
+  return <AuthPanel eyebrow="First-time setup" title="Set up the shop.">
+    <div className="stack">
+      <p>You are signed in as <b>{email}</b>, a website editor. The shop has no owner yet.</p>
+      <p className="muted">Press the button to become the owner. You can then add managers and staff, each with their own sign-in.</p>
+      {error ? <p className="bad-text" role="alert">{error}</p> : null}
+      <button type="button" className="btn primary block" disabled={busy} onClick={claim}>{busy ? 'Setting up…' : 'Set up the shop as owner'}</button>
+      <button type="button" className="btn ghost block" onClick={() => signOut(auth)}>Use another account</button>
+    </div>
+  </AuthPanel>
+}
+
+function NoAccess({ account }) {
+  const disabled = account.status === 'disabled'
+  return <AuthPanel eyebrow="No access" title={disabled ? 'This account is turned off.' : 'This account is not on the team.'}>
+    <div className="stack">
+      <p>{disabled ? 'Ask the owner to turn your account back on.' : <>{account.user?.email} is signed in, but the owner has not added it to the team. Ask the owner to add this email in Team.</>}</p>
+      <button type="button" className="btn primary block" onClick={() => signOut(auth)}>Use another account</button>
+    </div>
+  </AuthPanel>
 }
 
 function Shell() {
-  const { staff, state, branchIds, inScope } = useOps()
+  const { can, me, online, signOut: leave } = useOps()
   const parts = useHashRoute()
   const now = useNow(30000)
-  const [navOpen, setNavOpen] = useState(false)
+  const [more, setMore] = useState(false)
+  const orders = useWebOrders()
+  const allowed = PAGES.filter((page) => !page.action || can(page.action))
+  const [section = 'home', sub] = parts
+  const current = PAGES.find((page) => page.path === section)
+  const permitted = current && allowed.includes(current)
+  const badges = { orders: (orders || []).filter((order) => order.status === 'new').length }
+  const tabs = allowed.filter((page) => page.tab)
+  const moreActive = current && !current.tab
 
-  if (!staff) return <div className="ops"><DemoBanner /><SignIn /></div>
-
-  const allowedNav = NAV.filter((item) => item.allowed(staff))
-  const [section = 'overview', id] = parts
-  const current = NAV.find((item) => item.path === section)
-  const permitted = current ? current.allowed(staff) : false
-
-  const scopedOrders = state.orders.filter((order) => inScope(order.branchId))
-  const badges = {
-    orders: scopedOrders.filter((order) => orderAttention(order, now)).length,
-    payments: state.exceptions.filter((exception) => exception.status === 'open' && inScope(exception.branchId)).length,
-    inventory: can(staff, 'adjustStock') ? state.batches.filter((batch) => branchIds.includes(batch.branchId) && batch.quantity > 0 && expiryStatus(batch.expiresOn, now) === 'expired').length : 0,
-  }
-
-  let page = null
-  if (!current) page = <NotFound />
-  else if (!permitted) page = <NotAllowed />
-  else if (section === 'overview') page = <Overview />
-  else if (section === 'pos') page = <Pos />
-  else if (section === 'orders') page = id ? <OrderDetail orderId={decodeURIComponent(id)} /> : <Orders />
-  else if (section === 'inventory') page = <Inventory tab={id} />
-  else if (section === 'customers') page = <Customers customerKey={id} />
-  else if (section === 'products') page = <Products />
-  else if (section === 'deliveries') page = <Deliveries />
-  else if (section === 'payments') page = <Payments />
-  else if (section === 'ledger') page = <Ledger />
-  else if (section === 'staff') page = <Staff />
-  else if (section === 'audit') page = <Audit />
+  let page = <Missing />
+  if (current && !permitted) page = <Missing text="Your role cannot open this page. Ask the owner if you need it." />
+  else if (section === 'home') page = <Home />
+  else if (section === 'sell') page = <Sell />
+  else if (section === 'sales') page = <Sales />
+  else if (section === 'orders') page = <WebsiteOrders />
+  else if (section === 'stock') page = <Stock tab={sub} />
+  else if (section === 'reports') page = <Reports />
+  else if (section === 'setup') page = <Setup />
+  else if (section === 'team') page = <Team />
   else if (section === 'website') page = <Website />
-  else if (section === 'web-orders') page = <WebsiteOrders />
+  else if (section === 'account') page = <Account />
+  else if (section === 'help') page = <Help />
 
-  return <div className="ops">
-    <DemoBanner />
-    <div className={`frame ${section === 'pos' ? 'is-pos' : ''}`}>
-      <aside className={`sidebar ${navOpen ? 'open' : ''}`}>
-        <div className="brand-row">
-          <a href="#/overview" className="brand-mark" onClick={() => setNavOpen(false)}>
-            <span className="brand-name">SkinMatrix</span>
-            <span className="brand-sub">Shop operations</span>
-          </a>
-          <button type="button" className="icon-button nav-toggle" aria-label={navOpen ? 'Close menu' : 'Open menu'} aria-expanded={navOpen} onClick={() => setNavOpen((open) => !open)}><Icon name={navOpen ? 'close' : 'menu'} /></button>
-        </div>
-        <nav aria-label="Operations">
-          {allowedNav.map((item) => <a key={item.path} href={`#/${item.path}`} className={section === item.path ? 'active' : ''} aria-current={section === item.path ? 'page' : undefined} onClick={() => setNavOpen(false)}>
+  return <>
+    {!online ? <div className="offline-bar" role="status">No internet. You can look around, but sales and changes cannot be saved until it is back.</div> : null}
+    <div className={`frame ${section === 'sell' ? 'is-sell' : ''}`}>
+      <aside className="sidebar">
+        <a href="#/home" className="brand-mark"><span className="brand-name">SkinMatrix</span><span className="brand-sub">Shop system</span></a>
+        <nav aria-label="Main">
+          {allowed.map((item) => <a key={item.path} href={`#/${item.path}`} className={section === item.path ? 'active' : ''} aria-current={section === item.path ? 'page' : undefined}>
             <Icon name={item.icon} />
             <span className="nav-label">{item.label}</span>
-            {badges[item.path] ? <span className="nav-badge" aria-label={`${badges[item.path]} need attention`}>{badges[item.path]}</span> : null}
+            {badges[item.path] ? <span className="nav-badge" aria-label={`${badges[item.path]} new`}>{badges[item.path]}</span> : null}
           </a>)}
         </nav>
-        <StaffCard />
+        <div className="staff-card">
+          <div className="avatar" aria-hidden="true">{me.name.slice(0, 1)}</div>
+          <div className="staff-meta"><b>{me.name}</b><span>{ROLE_LABEL[me.role]}</span></div>
+          <button type="button" className="icon-button" onClick={leave} aria-label="Sign out" title="Sign out"><Icon name="logout" /></button>
+        </div>
       </aside>
       <div className="workspace">
-        <TopBar title={current?.label || 'Not found'} />
+        <header className="topbar">
+          <div>
+            <h1>{current?.label || 'Not found'}</h1>
+            <p className="topbar-date">{fmtFull(now)}</p>
+          </div>
+          <div className="topbar-actions">
+            <a className="icon-button" href="#/help" aria-label="Help"><Icon name="help" /></a>
+            <a className="avatar small mobile-only" href="#/account" aria-label="My account">{me.name.slice(0, 1)}</a>
+          </div>
+        </header>
         <main className="page" id="main">{page}</main>
       </div>
     </div>
-  </div>
-}
-
-function TopBar({ title }) {
-  const { staff, state, branchFilter, setBranchFilter, multiBranch } = useOps()
-  const now = useNow(30000)
-  return <header className="topbar">
-    <div>
-      <h1>{title}</h1>
-      <p className="topbar-date">{fmtFull(now)} · Ghana time</p>
-    </div>
-    {multiBranch ? <div className="context">
-      {can(staff, 'crossBranch')
-        ? <label className="branch-select">
-          <span>Branch view</span>
-          <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
-            <option value="all">All branches</option>
-            {state.branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-          </select>
-        </label>
-        : <div className="branch-fixed"><span>Branch</span><b>{state.branches.find((branch) => branch.id === staff.branchId)?.short}</b><Icon name="lock" size={13} /></div>}
-    </div> : <div className="shop-chip">{state.branches[0].name}</div>}
-  </header>
-}
-
-function StaffCard() {
-  const { staff, signOut, switchUser } = useOps()
-  const [changingPin, setChangingPin] = useState(false)
-  return <div className="staff-card">
-    <div className="avatar" aria-hidden="true">{staff.name.slice(0, 1)}</div>
-    <div className="staff-meta">
-      <b>{staff.name}</b>
-      <span>{ROLE_LABEL[staff.role]}</span>
-      <span className="staff-links"><button type="button" onClick={switchUser}>Switch user</button> · <button type="button" onClick={() => setChangingPin(true)}>My PIN</button></span>
-    </div>
-    <button type="button" className="icon-button" onClick={signOut} aria-label="Sign out" title="Sign out"><Icon name="logout" /></button>
-    {changingPin ? <ChangePinDialog onClose={() => setChangingPin(false)} /> : null}
-  </div>
-}
-
-function ChangePinDialog({ onClose }) {
-  const { staff, run } = useOps()
-  const [pin, setPin] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const valid = /^\d{4,6}$/.test(pin) && pin === confirm
-  const submit = async (event) => {
-    event.preventDefault()
-    if (!valid) return
-    if (await run((store) => store.setStaffPin(staff, { staffId: staff.id, pin }), 'Your PIN was changed.')) onClose()
-  }
-  return <Dialog title="Change my PIN" onClose={onClose}>
-    <form className="stack" onSubmit={submit}>
-      <div className="field-row">
-        <label className="field"><span>New PIN (4–6 digits)</span><input data-autofocus type="password" inputMode="numeric" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 6))} /></label>
-        <label className="field"><span>Repeat PIN</span><input type="password" inputMode="numeric" value={confirm} onChange={(event) => setConfirm(event.target.value.replace(/\D/g, '').slice(0, 6))} /></label>
+    <nav className="bottom-nav" aria-label="Main">
+      {tabs.map((item) => <a key={item.path} href={`#/${item.path}`} className={section === item.path ? 'active' : ''} aria-current={section === item.path ? 'page' : undefined}>
+        <span className="bottom-icon"><Icon name={item.icon} size={22} />{badges[item.path] ? <span className="nav-badge">{badges[item.path]}</span> : null}</span>
+        <span>{item.short || item.label}</span>
+      </a>)}
+      <button type="button" className={moreActive ? 'active' : ''} onClick={() => setMore(true)}><span className="bottom-icon"><Icon name="menu" size={22} /></span><span>More</span></button>
+    </nav>
+    {more ? <Dialog title="More" onClose={() => setMore(false)} sheet>
+      <div className="more-grid">
+        {allowed.filter((item) => !item.tab).map((item) => <a key={item.path} href={`#/${item.path}`} className={section === item.path ? 'active' : ''} onClick={() => setMore(false)}><Icon name={item.icon} size={22} /><span>{item.label}</span></a>)}
       </div>
-      {confirm && pin !== confirm ? <p className="bad-text small">The two PINs don't match.</p> : null}
-      <div className="row end"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button type="submit" className="btn primary" disabled={!valid}>Save PIN</button></div>
-    </form>
-  </Dialog>
+      <button type="button" className="btn ghost block" onClick={leave}><Icon name="logout" size={16} /> Sign out ({me.name})</button>
+    </Dialog> : null}
+  </>
 }
 
-function NotAllowed() {
-  return <div className="empty large"><b>Not available for your role</b><p>Ask the owner if you need access to this area.</p><a className="btn primary" href="#/overview">Back to overview</a></div>
-}
-
-function NotFound() {
-  return <div className="empty large"><b>Page not found</b><a className="btn primary" href="#/overview">Back to overview</a></div>
+function Missing({ text = 'This page does not exist.' }) {
+  return <div className="empty large"><b>Nothing here</b><p>{text}</p><a className="btn primary" href="#/home">Go to Home</a></div>
 }

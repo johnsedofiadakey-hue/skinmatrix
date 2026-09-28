@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore/lite'
 import { db } from '../../cloud/firebase.js'
 import { CATEGORIES, checkSiteEdits, cleanProduct, formatGhs, mergeCatalog, mergeContent, parseGhs, PRODUCT_IMAGES, SHOP_FIELDS } from '../../cloud/site.js'
+import { addVitabioticsDrafts, importVitabioticsCatalogue } from '../../cloud/vitabiotics.js'
 import { EditorGate } from '../cloud.jsx'
 import { Card, Icon, Pill, Segmented } from '../components/ui.jsx'
 import { useOps } from '../hooks.js'
@@ -19,13 +20,13 @@ const slug = (text) => String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').re
 
 export default function Website() {
   return <div className="stack website-editor">
-    <p className="muted">Change the words, products, prices and terms on the public website. Nothing here touches the till or the demo data.</p>
+    <p className="muted">Change the words, products, prices and terms on the public website. Products and prices here are also what the till sells.</p>
     <EditorGate purpose="Only the owner can change the public website.">{(user) => <Editor user={user} />}</EditorGate>
   </div>
 }
 
 function Editor({ user }) {
-  const { toast } = useOps()
+  const { toast, products: stockProducts } = useOps()
   const [tab, setTab] = useState('shop')
   const [content, setContent] = useState(null)
   const [products, setProducts] = useState(null)
@@ -78,7 +79,7 @@ function Editor({ user }) {
     </div>
     {tab === 'shop' ? <ShopTab shop={content.shop} onChange={(key, value) => edit('shop', key, value)} /> : null}
     {tab === 'home' ? <HomeTab home={content.home} onChange={(key, value) => edit('home', key, value)} /> : null}
-    {tab === 'products' ? <ProductsTab products={products} onChange={editProducts} /> : null}
+    {tab === 'products' ? <ProductsTab products={products} stockProducts={stockProducts} onChange={editProducts} /> : null}
     {tab === 'checkout' ? <CheckoutTab checkout={content.checkout} onChange={(key, value) => edit('checkout', key, value)} /> : null}
     {tab === 'terms' ? <TermsTab terms={content.terms} onChange={(terms) => { setContent({ ...content, terms }); setDirty(true) }} /> : null}
   </>
@@ -113,21 +114,93 @@ function ShopTab({ shop, onChange }) {
 }
 
 function HomeTab({ home, onChange }) {
-  return <Card title="Top of the home page">
-    <div className="stack">
-      <TextField label="Headline" hint="press Enter for a new line" multiline={2} value={home.heroTitle} onChange={(value) => onChange('heroTitle', value)} maxLength={60} />
-      <TextField label="Last word of the headline" hint="shown lighter" value={home.heroAccent} onChange={(value) => onChange('heroAccent', value)} maxLength={30} />
-      <TextField label="Text under the headline" multiline value={home.heroText} onChange={(value) => onChange('heroText', value)} maxLength={200} />
-      <div className="website-preview" aria-label="Preview">
-        <span className="muted small">Preview</span>
-        <h3>{home.heroTitle.split('\n').map((line, index) => <span key={index}>{index ? <br /> : null}{line}</span>)} <em>{home.heroAccent}</em></h3>
-        <p>{home.heroText}</p>
+  const updatePath = (index, key, value) => onChange('audiencePaths', home.audiencePaths.map((path, pathIndex) => pathIndex === index ? { ...path, [key]: value } : path))
+  const updateLogo = (index, key, value) => onChange('brandLogos', home.brandLogos.map((logo, logoIndex) => logoIndex === index ? { ...logo, [key]: value } : logo))
+  const copyFields = [
+    ['careKicker', 'Care section label'], ['careTitle', 'Care heading'], ['careAccent', 'Care heading accent'], ['careText', 'Care section text'],
+    ['supplementsTitle', 'Supplements card title'], ['supplementsText', 'Supplements card text'], ['supplementsAction', 'Supplements button'],
+    ['skincareTitle', 'Skincare card title'], ['skincareText', 'Skincare card text'], ['skincareAction', 'Skincare button'],
+    ['concernKicker', 'Concern section label'], ['concernTitle', 'Concern heading'], ['concernAccent', 'Concern heading accent'], ['concernText', 'Concern section text'],
+    ['productsKicker', 'Products section label'], ['productsTitle', 'Products heading'], ['productsAccent', 'Products heading accent'], ['productsText', 'Products section text'],
+    ['ageKicker', 'Age section label'], ['ageTitle', 'Age heading'], ['ageAccent', 'Age heading accent'], ['ageText', 'Age section text'],
+    ['brandsKicker', 'Brands section label'], ['brandsTitle', 'Brands heading'], ['brandsAccent', 'Brands heading accent'], ['brandsText', 'Brands section text'],
+  ]
+
+  return <div className="stack">
+    <Card title="Top of the home page">
+      <div className="stack">
+        <TextField label="Headline" hint="press Enter for a new line" multiline={2} value={home.heroTitle} onChange={(value) => onChange('heroTitle', value)} maxLength={60} />
+        <TextField label="Last word of the headline" hint="shown lighter" value={home.heroAccent} onChange={(value) => onChange('heroAccent', value)} maxLength={30} />
+        <TextField label="Text under the headline" multiline value={home.heroText} onChange={(value) => onChange('heroText', value)} maxLength={200} />
+        <div className="website-preview" aria-label="Preview">
+          <span className="muted small">Preview</span>
+          <h3>{home.heroTitle.split('\n').map((line, index) => <span key={index}>{index ? <br /> : null}{line}</span>)} <em>{home.heroAccent}</em></h3>
+          <p>{home.heroText}</p>
+        </div>
       </div>
-    </div>
-  </Card>
+    </Card>
+
+    <Card title="Care for every chapter">
+      <div className="stack">
+        <p className="muted">Every image, word, button and stage animation below drives the interactive audience panel on the homepage. Paste a supplier-approved image link or one from your own storage—nothing here is locked into code.</p>
+        <div className="grid-2">
+          <TextField label="Section label" value={home.audienceKicker} onChange={(value) => onChange('audienceKicker', value)} maxLength={50} />
+          <span />
+          <TextField label="Main heading" value={home.audienceTitle} onChange={(value) => onChange('audienceTitle', value)} maxLength={60} />
+          <TextField label="Heading accent" value={home.audienceAccent} onChange={(value) => onChange('audienceAccent', value)} maxLength={70} />
+        </div>
+        <TextField label="Section introduction" multiline value={home.audienceText} onChange={(value) => onChange('audienceText', value)} maxLength={240} />
+      </div>
+    </Card>
+
+    {home.audiencePaths.map((path, index) => <Card key={path.id} title={`${path.number} · ${path.tab || path.id}`}>
+      <div className="stack">
+        <div className="grid-2">
+          <TextField label="Tab name" value={path.tab} onChange={(value) => updatePath(index, 'tab', value)} maxLength={24} />
+          <TextField label="Small label" value={path.eyebrow} onChange={(value) => updatePath(index, 'eyebrow', value)} maxLength={50} />
+          <TextField label="Headline" value={path.title} onChange={(value) => updatePath(index, 'title', value)} maxLength={48} />
+          <TextField label="Headline accent" value={path.accent} onChange={(value) => updatePath(index, 'accent', value)} maxLength={48} />
+        </div>
+        <TextField label="Message" multiline value={path.description} onChange={(value) => updatePath(index, 'description', value)} maxLength={240} />
+        <div className="grid-2">
+          <TextField label="Tags" hint="separate with commas" value={path.tags.join(', ')} onChange={(value) => updatePath(index, 'tags', value.split(',').map((tag) => tag.trim()).filter(Boolean).slice(0, 5))} />
+          <TextField label="Button text" value={path.action} onChange={(value) => updatePath(index, 'action', value)} maxLength={40} />
+          <TextField label="Button link" hint="e.g. /shop?for=Women" value={path.href} onChange={(value) => updatePath(index, 'href', value)} />
+          <label className="field"><span>Animated stage style</span><select value={path.visual} onChange={(event) => updatePath(index, 'visual', event.target.value)}><option value="product">Floating product</option><option value="children">Age orbit</option><option value="goals">Goal dial</option></select></label>
+        </div>
+        <div className="grid-2">
+          <TextField label="Stage image link" hint="https://… or /assets/… · leave empty for an illustration-only stage" value={path.image} onChange={(value) => updatePath(index, 'image', value)} />
+          <TextField label="Image label" hint="e.g. Wellkid" value={path.imageLabel} onChange={(value) => updatePath(index, 'imageLabel', value)} maxLength={30} />
+        </div>
+        {path.image ? <div className="website-image-preview"><img src={path.image} alt="" referrerPolicy="no-referrer" /><span>{path.imageLabel || 'Stage image preview'}</span></div> : <p className="muted small">This stage currently uses its animated illustration without a product image.</p>}
+      </div>
+    </Card>)}
+
+    <Card title="Homepage images and brand logos">
+      <div className="stack">
+        <p className="muted small">Product photos on the hero, care cards and product rail come from the Products tab. These settings cover the remaining homepage art and the moving brand logo line.</p>
+        <div className="grid-2">
+          <TextField label="Product section artwork" hint="https://… or /assets/…" value={home.productArt} onChange={(value) => onChange('productArt', value)} />
+          <TextField label="Editorial age image" hint="https://… or /assets/…" value={home.editorialImage} onChange={(value) => onChange('editorialImage', value)} />
+        </div>
+        <div className="grid-2">{home.brandLogos.map((logo, index) => <div className="stack" key={logo.name}><TextField label="Brand name" value={logo.name} onChange={(value) => updateLogo(index, 'name', value)} maxLength={40} /><TextField label={`${logo.name || 'Brand'} logo link`} hint="https://… or /assets/…" value={logo.image} onChange={(value) => updateLogo(index, 'image', value)} /></div>)}</div>
+      </div>
+    </Card>
+
+    <Card title="Other homepage copy">
+      <div className="stack">
+        <p className="muted small">These words appear in the care, needs, product, age and brand sections. The products themselves remain editable in the Products tab.</p>
+        <div className="grid-2">{copyFields.map(([key, label]) => <TextField key={key} label={label} value={home[key]} onChange={(value) => onChange(key, value)} maxLength={key.endsWith('Text') ? 240 : 80} multiline={key.endsWith('Text')} />)}</div>
+      </div>
+    </Card>
+  </div>
 }
 
-function ProductsTab({ products, onChange }) {
+function ProductsTab({ products, stockProducts, onChange }) {
+  const [importing, setImporting] = useState(false)
+  const [importNote, setImportNote] = useState('')
+  const [filter, setFilter] = useState('all')
+  const [search, setSearch] = useState('')
   const update = (index, key, value) => onChange(products.map((product, i) => (i === index ? { ...product, [key]: value } : product)))
   const move = (index, step) => {
     const next = [...products]
@@ -140,19 +213,52 @@ function ProductsTab({ products, onChange }) {
     onChange(products.filter((_, i) => i !== index))
   }
   const add = () => onChange([...products, cleanProduct({ id: `${slug('new product')}-${Date.now().toString(36)}`, name: 'New product', visible: false, image: '' })])
+  const importSupplierCatalogue = async () => {
+    setImporting(true)
+    setImportNote('')
+    try {
+      const supplierProducts = await importVitabioticsCatalogue()
+      const next = addVitabioticsDrafts(products, supplierProducts)
+      onChange(next.products.map(cleanProduct))
+      setImportNote(next.added ? `${next.added} Vitabiotics products added as private drafts. Set Ghana price, stock and “Show on website” only for items you are ready to sell, then save.` : `No new Vitabiotics products found. ${next.skipped} existing supplier drafts were left untouched.`)
+    } catch (error) {
+      setImportNote(error instanceof Error ? error.message : 'Could not load the supplier catalogue. Please try again.')
+    }
+    setImporting(false)
+  }
+  const needle = search.trim().toLowerCase()
+  const shown = products.map((product, index) => ({ product, index })).filter(({ product }) => {
+    const matchesFilter = filter === 'all' || (filter === 'drafts' ? !product.visible : product.visible)
+    return matchesFilter && (!needle || `${product.name} ${product.brand} ${product.type} ${product.audiences?.join(' ')} ${product.needs?.join(' ')}`.toLowerCase().includes(needle))
+  })
+  const drafts = products.filter((product) => !product.visible).length
+  const stockByProduct = new Map(stockProducts.map((product) => [product.id, Number(product.stock?.onHand || 0)]))
 
   return <div className="stack">
-    <p className="muted">A product can be bought only when it has a price, is in stock and is shown on the website. Prices are in Ghana cedis.</p>
-    {products.map((product, index) => <ProductEditor key={product.id} product={product} index={index} count={products.length} onChange={(key, value) => update(index, key, value)} onMove={(step) => move(index, step)} onRemove={() => remove(index)} />)}
+    <p className="muted">This is the full catalogue, including products already visible to customers. Search any product to edit its description, Ghana price, image or visibility.</p>
+    <div className="callout"><Icon name="alert" /><p><b>Simple setup:</b> search for the products you physically have, add their Ghana price and tick “Show on website.” Then use <a href="#/stock/receive">Receive delivery</a> to record quantity, expiry date and cost from the supplier invoice. Once stock is recorded, the product automatically becomes available to customers—there is no second stock switch.</p></div>
+    <Card title="Vitabiotics supplier catalogue">
+      <div className="stack">
+        <p className="muted">Bring in the current approved Vitabiotics catalogue with official images, descriptions and useful discovery tags. Imported products stay hidden, out of stock and without a Ghana price until you approve each one.</p>
+        <div><button type="button" className="btn" onClick={importSupplierCatalogue} disabled={importing}>{importing ? 'Loading catalogue…' : 'Import Vitabiotics as drafts'}</button></div>
+        {importNote ? <p className={importNote.startsWith('Could not') || importNote.includes('unexpected') ? 'bad-text' : 'good-text'} role="status">{importNote}</p> : null}
+      </div>
+    </Card>
+    <div className="toolbar">
+      <Segmented label="Products to show" value={filter} onChange={setFilter} options={[{ value: 'drafts', label: 'Needs review', count: drafts }, { value: 'live', label: 'On website', count: products.length - drafts }, { value: 'all', label: 'All', count: products.length }]} />
+      <label className="search grow"><Icon name="search" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by product, brand, audience or need" aria-label="Search products" /></label>
+    </div>
+    <p className="muted small">Showing {shown.length} of {products.length} products. Each product image is shown here so you can match it to the box on your shelf.</p>
+    {shown.map(({ product, index }) => <ProductEditor key={product.id} product={product} stockCount={stockByProduct.get(product.id) || 0} index={index} count={products.length} onChange={(key, value) => update(index, key, value)} onMove={(step) => move(index, step)} onRemove={() => remove(index)} />)}
     <div><button type="button" className="btn" onClick={add}><Icon name="plus" size={16} /> Add a product</button></div>
   </div>
 }
 
-function ProductEditor({ product, index, count, onChange, onMove, onRemove }) {
+function ProductEditor({ product, stockCount, index, count, onChange, onMove, onRemove }) {
   const [priceText, setPriceText] = useState(toCedis(product.price))
   const priceBad = priceText.trim() !== '' && parseGhs(priceText) === null
   const known = PRODUCT_IMAGES.some((image) => image.src === product.image)
-  const status = !product.visible ? <Pill tone="grey">Hidden</Pill> : !product.inStock ? <Pill tone="amber">Out of stock</Pill> : !product.price ? <Pill tone="amber">No price yet</Pill> : <Pill tone="green">On sale · {formatGhs(product.price)}</Pill>
+  const status = !product.visible ? <Pill tone="grey">Hidden from customers</Pill> : !product.price ? <Pill tone="amber">Add Ghana price</Pill> : stockCount < 1 ? <Pill tone="amber">Awaiting stock record</Pill> : <Pill tone="green">{stockCount} in stock · {formatGhs(product.price)}</Pill>
   return <Card title={<span className="product-editor-title">{product.image ? <img src={product.image} alt="" /> : null}{product.name || 'Untitled'} {status}</span>} actions={<>
     <button type="button" className="icon-button" onClick={() => onMove(-1)} disabled={index === 0} aria-label="Move up"><Icon name="back" size={16} className="rot-90" /></button>
     <button type="button" className="icon-button" onClick={() => onMove(1)} disabled={index === count - 1} aria-label="Move down"><Icon name="back" size={16} className="rot-270" /></button>
@@ -170,6 +276,7 @@ function ProductEditor({ product, index, count, onChange, onMove, onRemove }) {
       </label>
     </div>
     <TextField label="Short description" hint="one or two simple sentences" multiline value={product.description} onChange={(value) => onChange('description', value)} maxLength={240} />
+    {product.sourceUrl ? <p className="muted small">Supplier source: <a href={product.sourceUrl} target="_blank" rel="noreferrer">{product.supplier || 'View original product'} ↗</a></p> : null}
     <div className="grid-2">
       <label className="field"><span>Picture</span>
         <select value={known ? product.image : 'custom'} onChange={(event) => onChange('image', event.target.value === 'custom' ? '' : event.target.value)}>
@@ -181,8 +288,8 @@ function ProductEditor({ product, index, count, onChange, onMove, onRemove }) {
     </div>
     <div className="row website-toggles">
       <label className="check"><input type="checkbox" checked={product.visible} onChange={(event) => onChange('visible', event.target.checked)} /> Show on website</label>
-      <label className="check"><input type="checkbox" checked={product.inStock} onChange={(event) => onChange('inStock', event.target.checked)} /> In stock</label>
     </div>
+    <p className="muted small">Physical stock: <b>{stockCount}</b> unit{stockCount === 1 ? '' : 's'} recorded. Use <a href="#/stock/receive">Stock → Receive delivery</a> to change it; this is what controls whether customers can add the product to cart.</p>
   </Card>
 }
 

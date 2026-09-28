@@ -64,7 +64,19 @@ footer.site-footer { display: block; padding: 56px 5.5vw 26px; background: var(-
 .footer-bottom small { font-size: 12px; color: #a9a7c7; }
 .footer-staff { font-size: 12px; color: #fff; opacity: .32; transition: opacity .2s; }
 .footer-staff:hover, .footer-staff:focus-visible { opacity: .85; }
+.footer-powered { color: #dcd5eb; font-size: 12px; opacity: .74; transition: opacity .2s; }.footer-powered b { color: #fff; font-weight: 600; }.footer-powered:hover, .footer-powered:focus-visible { opacity: 1; }
 @media (max-width: 760px) { footer.site-footer { padding: 44px 20px 22px; } .footer-top { grid-template-columns: 1fr; gap: 26px; } }
+
+/* Footer trust surface: the fine print gets an actual sense of presence. */
+footer.site-footer { position: relative; overflow: hidden; background: radial-gradient(circle at 86% 17%, rgba(170, 115, 191, .32), transparent 23%), radial-gradient(circle at 8% 95%, rgba(221, 121, 153, .2), transparent 28%), #171741; }
+footer.site-footer::before, footer.site-footer::after { content: ''; position: absolute; z-index: 0; border: 1px solid rgba(255,255,255,.11); border-radius: 50%; pointer-events: none; animation: footerOrbit 18s linear infinite; }
+footer.site-footer::before { width: 460px; height: 460px; right: -245px; top: -256px; }.site-footer::after { width: 310px; height: 310px; left: -190px; bottom: -185px; animation-direction: reverse; animation-duration: 23s; }
+.site-footer > * { position: relative; z-index: 1; }
+.footer-trust { display: block; margin-top: 52px; padding: 24px 0; border-top: 1px solid rgba(255,255,255,.16); border-bottom: 1px solid rgba(255,255,255,.16); }
+.footer-payment-note { display: grid; gap: 8px; }.footer-payment-note .eyebrow, .footer-brand-area .eyebrow { color: #c9b8df; font-size: 9px; }.footer-payment-note b { color: #fff; font-size: 17px; font-weight: 500; letter-spacing: -.02em; }.footer-payment-note p { margin: 0; max-width: 300px; color: #bdb9d4; font-size: 11px; line-height: 1.55; }
+@keyframes footerOrbit { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { footer.site-footer::before, footer.site-footer::after { animation: none; } }
+@media (max-width: 760px) { .footer-trust { margin-top: 36px; padding: 20px 0; }.footer-payment-note b { font-size: 16px; }.footer-payment-note p { max-width: 340px; } }
 
 /* Checkout */
 .checkout-page, .terms-page { background: var(--ivory); min-height: 100svh; }

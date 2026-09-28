@@ -7,11 +7,16 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:functions": "firebase emulators:exec --only firestore,auth --project demo-skinmatrix \"vitest run --config functions/vitest.config.js\"",
+    "dev:emulators": "firebase emulators:start --only firestore,auth,functions --project demo-skinmatrix",
+    "dev:local": "vite --mode emulators"
   },
   "dependencies": {
     "@react-three/drei": "^10.0.8",
     "@react-three/fiber": "^9.1.2",
+    "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0",
     "firebase": "^12.19.0",
     "gsap": "^3.12.7",
     "lucide-react": "^1.48.0",

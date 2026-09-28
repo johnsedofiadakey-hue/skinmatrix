@@ -1,6 +1,7 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "skinmatrix-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "--", "--port", "5181", "--strictPort"], "port": 5181 }
+    { "name": "skinmatrix-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "--", "--port", "5181", "--strictPort"], "port": 5181 },
+    { "name": "skinmatrix-emulated", "runtimeExecutable": "npx", "runtimeArgs": ["vite", "--port", "5182", "--strictPort", "--mode", "emulators"], "port": 5182 }
   ]
 }

@@ -11,7 +11,7 @@ export function ArrowNext() { return <span className="icon-wrap" aria-hidden="tr
 export function AddIcon() { return <Plus {...ICON} /> }
 
 // The hero shelf keeps the original four product photos whatever the catalog says.
-export const heroProducts = DEFAULT_PRODUCTS
+export const heroProducts = DEFAULT_PRODUCTS.slice(0, 4)
 
 export function ProductVisual({ product, className = '' }) {
   return <div className={`brand-product-visual ${className}`} aria-hidden="true"><div className="product-halo" />{product.image ? <img src={product.image} alt="" referrerPolicy="no-referrer" /> : null}</div>
@@ -41,15 +41,23 @@ function writeJson(key, value) {
 
 async function loadSite() {
   const [{ doc, getDoc }, { db }] = await Promise.all([import('firebase/firestore/lite'), import('./cloud/firebase.js')])
-  const [content, catalog] = await Promise.all([getDoc(doc(db, 'site', 'content')), getDoc(doc(db, 'site', 'catalog'))])
-  return { content: content.exists() ? content.data() : null, catalog: catalog.exists() ? catalog.data() : null }
+  const [content, catalog, availability] = await Promise.all([
+    getDoc(doc(db, 'site', 'content')),
+    getDoc(doc(db, 'site', 'catalog')),
+    getDoc(doc(db, 'site', 'availability')),
+  ])
+  return {
+    content: content.exists() ? content.data() : null,
+    catalog: catalog.exists() ? catalog.data() : null,
+    availability: availability.exists() ? availability.data() : null,
+  }
 }
 
 const SiteContext = createContext(null)
 
 export function SiteProvider({ children }) {
   // Show the last saved content straight away, then refresh it from the database.
-  const [saved, setSaved] = useState(() => readJson(SITE_CACHE) || { content: null, catalog: null })
+  const [saved, setSaved] = useState(() => readJson(SITE_CACHE) || { content: null, catalog: null, availability: null })
   const [cart, setCart] = useState(() => {
     const stored = readJson(CART_KEY)
     return stored && typeof stored === 'object' ? stored : {}
@@ -74,7 +82,16 @@ export function SiteProvider({ children }) {
   const content = useMemo(() => mergeContent(saved.content), [saved.content])
   // Local testing only (removed from the live build): localStorage 'skinmatrix-dev-catalog' = { products: [...] }.
   const devCatalog = import.meta.env.DEV ? readJson('skinmatrix-dev-catalog') : null
-  const products = useMemo(() => mergeCatalog(devCatalog || saved.catalog), [devCatalog ? JSON.stringify(devCatalog) : '', saved.catalog]) // eslint-disable-line react-hooks/exhaustive-deps
+  const products = useMemo(() => {
+    const stockAvailability = saved.availability?.products || {}
+    return mergeCatalog(devCatalog || saved.catalog).map((product) => (
+      // A recorded physical-stock count overrides the old manual availability
+      // flag. Products without a stock record retain their existing behaviour.
+      Object.prototype.hasOwnProperty.call(stockAvailability, product.id)
+        ? { ...product, inStock: stockAvailability[product.id] === true }
+        : product
+    ))
+  }, [devCatalog ? JSON.stringify(devCatalog) : '', saved.catalog, saved.availability]) // eslint-disable-line react-hooks/exhaustive-deps
   const shown = useMemo(() => products.filter((product) => product.visible), [products])
 
   // Only products that can still be bought count; a product that went out of stock drops out of the cart.
@@ -176,8 +193,12 @@ export function SiteFooter() {
         {shop.address ? <span>{shop.address}</span> : null}
       </div>
     </div>
+    <section className="footer-trust" aria-label="Payment options">
+      <div className="footer-payment-note"><span className="eyebrow">Checkout your way</span><b>Secure payment via Paystack</b><p>MTN MoMo · Telecel Cash · AirtelTigo Money · Cards · Bank transfer</p></div>
+    </section>
     <div className="footer-bottom">
       <small>© {new Date().getFullYear()} {shop.legalName || 'SkinMatrix'}. Skincare and supplements.</small>
+      <a className="footer-powered" href="https://stormglide.io" target="_blank" rel="noreferrer">Built and powered by <b>Stormglide.io</b></a>
       <a className="footer-staff" href="/admin/">Staff login</a>
     </div>
   </footer>

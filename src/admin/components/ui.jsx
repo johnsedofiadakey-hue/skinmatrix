@@ -29,6 +29,15 @@ const ICONS = {
   delivery: 'M1 4h14v12H1zM15 9h4l3 3v4h-7M5.5 19a2 2 0 100-4 2 2 0 000 4zM18.5 19a2 2 0 100-4 2 2 0 000 4z',
   staff: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21v-1a6 6 0 016-6h4a6 6 0 016 6v1M17 8l2 2 3-3',
   tag: 'M3 12V3h9l9 9-9 9zM7.5 7.5h.01',
+  help: 'M12 22a10 10 0 100-20 10 10 0 000 20zM9.1 9a3 3 0 015.8 1c0 2-3 3-3 3M12 17h.01',
+  printer: 'M6 9V3h12v6M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v7H6z',
+  whatsapp: 'M3 21l1.7-5A9 9 0 1112 21a9 9 0 01-4.3-1.1zM9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.5-2-1-1 1a4 4 0 01-3-3l1-1-1-2z',
+  camera: 'M3 7h4l2-3h6l2 3h4v13H3zM12 17a4 4 0 100-8 4 4 0 000 8z',
+  home: 'M3 11l9-8 9 8M5 9v11h14V9',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
+  sale: 'M6 2h12v20l-3-2-3 2-3-2-3 2zM9 7h6M9 11h6M9 15h4',
+  user: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21v-1a6 6 0 016-6h4a6 6 0 016 6v1',
+  alertCircle: 'M12 22a10 10 0 100-20 10 10 0 000 20zM12 8v4M12 16h.01',
   undo: 'M9 14L4 9l5-5M4 9h11a5 5 0 010 10h-3',
   globe: 'M12 21a9 9 0 100-18 9 9 0 000 18zM3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18',
   cart: 'M3 4h2l2.4 11h11.2L21 7H6.2M9 20a1 1 0 100-2 1 1 0 000 2zM18 20a1 1 0 100-2 1 1 0 000 2z',
@@ -102,7 +111,7 @@ export function Card({ title, actions, children, className = '', flush = false }
   </section>
 }
 
-export function Dialog({ title, onClose, children, footer, wide = false }) {
+export function Dialog({ title, onClose, children, footer, wide = false, sheet = false }) {
   const ref = useRef(null)
   const closeRef = useRef(onClose)
   const titleId = useId()
@@ -128,7 +137,7 @@ export function Dialog({ title, onClose, children, footer, wide = false }) {
   }, [])
   return <div className="dialog-layer">
     <button type="button" className="dialog-backdrop" aria-label="Close dialog" tabIndex={-1} onClick={onClose} />
-    <div ref={ref} className={`dialog ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <div ref={ref} className={`dialog ${wide ? 'wide' : ''} ${sheet ? 'sheet' : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <header className="dialog-head">
         <h2 id={titleId}>{title}</h2>
         <button type="button" className="icon-button" onClick={onClose} aria-label="Close"><Icon name="close" /></button>

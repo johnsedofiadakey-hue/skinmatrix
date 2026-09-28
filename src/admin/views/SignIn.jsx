@@ -1,55 +1,37 @@
 import { useState } from 'react'
-import { useOps } from '../hooks.js'
-import { Icon, Pill } from '../components/ui.jsx'
-import { PinDialog } from '../components/pin.jsx'
-import { ROLE_LABEL } from '../components/format.js'
+import { sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth'
+import { auth, authMessage } from '../cloud.jsx'
 
-// Sign-in UI. Production: Firebase Auth (email + password for the owner and managers; a personal PIN on the shared
-// till) issues an ID token whose custom claims carry the role; every server command verifies it.
-// In this prototype the demo server checks the PIN against a stored hash.
+// One route into the private area: the authorised Firebase administrator account.
 export default function SignIn() {
-  const { state, signIn } = useOps()
-  const [notice, setNotice] = useState(false)
-  const [chosen, setChosen] = useState(null)
-  const people = [...state.staff].sort((a, b) => Number(b.active !== false) - Number(a.active !== false))
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState(null)
 
-  return <div className="signin">
-    <section className="signin-panel">
-      <div className="signin-brand">
-        <span className="brand-name">SkinMatrix</span>
-        <span className="brand-sub">Shop operations</span>
-      </div>
-      <h1>Sign in</h1>
-      <form className="stack" onSubmit={(event) => { event.preventDefault(); setNotice(true) }}>
-        <label className="field"><span>Work email</span><input type="email" autoComplete="off" placeholder="name@skinmatrix.example" /></label>
-        <label className="field"><span>Password</span><input type="password" autoComplete="off" placeholder="••••••••" /></label>
-        <button type="submit" className="btn primary block">Sign in</button>
+  const submit = async (event) => {
+    event.preventDefault()
+    setBusy(true); setMessage(null)
+    try { await signInWithEmailAndPassword(auth, email.trim(), password) } catch (error) { setMessage({ tone: 'bad', text: authMessage(error) }) } finally { setBusy(false) }
+  }
+  const resetPassword = async () => {
+    if (!email.trim()) { setMessage({ tone: 'bad', text: 'Enter your email first, then select “Forgot password?”.' }); return }
+    setBusy(true); setMessage(null)
+    try { await sendPasswordResetEmail(auth, email.trim()); setMessage({ tone: 'good', text: 'If this email has an account, we sent a password-reset link.' }) } catch (error) { setMessage({ tone: 'bad', text: authMessage(error) }) } finally { setBusy(false) }
+  }
+
+  return <main className="signin-clean">
+    <a className="signin-back" href="/">← Back to SkinMatrix</a>
+    <section className="signin-panel signin-panel--clean" aria-labelledby="admin-signin-title">
+      <div className="signin-brand"><span className="brand-name">SkinMatrix</span><span className="brand-sub">Shop system</span></div>
+      <div className="signin-intro"><span className="eyebrow">Secure access</span><h1 id="admin-signin-title">Welcome back.</h1><p>Sign in with your own staff email and password.</p></div>
+      <form className="stack" onSubmit={submit}>
+        <label className="field"><span>Email</span><input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
+        <label className="field"><span>Password</span><input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+        {message ? <p className={message.tone === 'bad' ? 'bad-text' : 'good-text'} role="alert">{message.text}</p> : null}
+        <button type="submit" className="btn primary block" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
       </form>
-      {notice ? <div className="callout warn" role="alert">
-        <Icon name="alert" />
-        <p><b>Email sign-in is not connected in this prototype.</b> In production Firebase Auth verifies identity and the role comes from server-issued claims. Use a staff PIN below.</p>
-      </div> : null}
+      <button type="button" className="signin-reset" onClick={resetPassword} disabled={busy}>Forgot password?</button>
     </section>
-
-    <section className="signin-personas" aria-labelledby="personas-title">
-      <h2 id="personas-title">Who's at the till? <Pill tone="amber">Demo staff</Pill></h2>
-      <p className="muted">Choose your name and enter your PIN. Staff can sell and handle orders; voids, refunds and big discounts need a manager's PIN.</p>
-      <ul className="persona-list">
-        {people.map((member) => {
-          const active = member.active !== false
-          return <li key={member.id}>
-            <button type="button" className="persona" disabled={!active} onClick={() => setChosen(member.id)}>
-              <span className="avatar" aria-hidden="true">{member.name.slice(0, 1)}</span>
-              <span className="persona-meta">
-                <b>{member.name}</b>
-                <span>{ROLE_LABEL[member.role]}{active ? '' : ' · deactivated'}</span>
-              </span>
-              <span className="persona-go">{active ? 'Enter PIN →' : ''}</span>
-            </button>
-          </li>
-        })}
-      </ul>
-    </section>
-    {chosen ? <PinDialog title="Enter your PIN" staff={state.staff} initialId={chosen} onClose={() => setChosen(null)} onSubmit={async (staffId, pin) => { if (await signIn(staffId, pin)) setChosen(null) }} /> : null}
-  </div>
+  </main>
 }

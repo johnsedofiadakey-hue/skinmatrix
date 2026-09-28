@@ -36,7 +36,9 @@ export function cartLines(cart, products) {
     .filter((product) => canBuy(product) && cart[product.id] > 0)
     .map((product) => {
       const qty = Math.min(MAX_QTY, Math.floor(cart[product.id]))
-      return { id: product.id, name: product.name, brand: product.brand, size: product.size, price: product.price, qty, lineTotal: product.price * qty }
+      // Keep the image that was shown at checkout with the order. This lets the
+      // fulfilment team identify a box even if the catalogue artwork changes later.
+      return { id: product.id, name: product.name, brand: product.brand, size: product.size, image: String(product.image || '').slice(0, 1000), price: product.price, qty, lineTotal: product.price * qty }
     })
 }
 

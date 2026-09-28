@@ -8,6 +8,12 @@ service cloud.firestore {
 
     function signedIn() { return request.auth != null; }
     function isAdmin() { return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+
+    // Shop staff: a profile in /staff written only by Cloud Functions (the owner adds people from the admin).
+    function staffProfile() { return get(/databases/$(database)/documents/staff/$(request.auth.uid)).data; }
+    function isStaff() { return signedIn() && exists(/databases/$(database)/documents/staff/$(request.auth.uid)) && staffProfile().active == true; }
+    function isManager() { return isStaff() && staffProfile().role in ['manager', 'owner']; }
+    function isOwner() { return isStaff() && staffProfile().role == 'owner'; }
     function stamped() {
       return request.resource.data.updatedAt == request.time && request.resource.data.updatedBy == request.auth.uid;
     }
@@ -20,29 +26,60 @@ service cloud.firestore {
     // Public website content. Anyone can read; only admins can edit.
     match /site/content {
       allow read: if true;
-      allow write: if isAdmin() && stamped()
+      allow write: if (isAdmin() || isOwner()) && stamped()
         && request.resource.data.keys().hasOnly(['shop', 'home', 'checkout', 'terms', 'updatedAt', 'updatedBy'])
         && request.resource.data.shop is map && request.resource.data.home is map
         && request.resource.data.checkout is map && request.resource.data.terms is map;
     }
     match /site/catalog {
       allow read: if true;
-      allow write: if isAdmin() && stamped()
+      allow write: if (isAdmin() || isOwner()) && stamped()
         && request.resource.data.keys().hasOnly(['products', 'updatedAt', 'updatedBy'])
         && request.resource.data.products is list && request.resource.data.products.size() <= 200;
     }
 
+    // Which products the website may show as in stock. Written only by Cloud Functions after stock changes.
+    match /site/availability {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // Orders from the website checkout. Customers can only create one, in the expected shape.
-    // Staff (admins) read them and move them along; nobody can delete them.
+    // Staff read them; moving an order along (which takes or returns stock) goes through Cloud Functions.
+    // Staff may only add their own note. Nobody can delete an order.
     match /orders/{orderId} {
       allow create: if validNewOrder(orderId);
-      allow read: if isAdmin();
-      allow update: if isAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'payment', 'staffNote', 'updatedAt', 'updatedBy'])
-        && request.resource.data.status in ['new', 'confirmed', 'ready', 'out_for_delivery', 'completed', 'cancelled']
+      allow read: if isStaff() || isAdmin();
+      allow update: if isStaff()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['staffNote', 'updatedAt', 'updatedBy'])
+        && request.resource.data.staffNote is string && request.resource.data.staffNote.size() <= 500
         && request.resource.data.updatedAt == request.time && request.resource.data.updatedBy == request.auth.uid;
       allow delete: if false;
     }
+
+    // ── Shop operations. Every write happens in Cloud Functions (functions/src/handlers.js). ──
+    match /staff/{uid} {
+      allow read: if isStaff() || (signedIn() && request.auth.uid == uid);
+      allow write: if false;
+    }
+    match /staffSecrets/{uid} { allow read, write: if false; }
+    match /counters/{name} { allow read, write: if false; }
+    match /requests/{id} { allow read, write: if false; }
+
+    // Everyone at the till: product codes, stock levels (no costs) and sales.
+    match /catalogOps/{productId} { allow read: if isStaff(); allow write: if false; }
+    match /stock/{productId} { allow read: if isStaff(); allow write: if false; }
+    match /sales/{saleId} { allow read: if isStaff(); allow write: if false; }
+
+    // Managers and the owner: costs, batches, stock history, suppliers, deliveries, counts and the activity log.
+    match /catalogCosts/{productId} { allow read: if isManager(); allow write: if false; }
+    match /saleCosts/{saleId} { allow read: if isManager(); allow write: if false; }
+    match /batches/{batchId} { allow read: if isManager(); allow write: if false; }
+    match /movements/{id} { allow read: if isManager(); allow write: if false; }
+    match /suppliers/{id} { allow read: if isManager(); allow write: if false; }
+    match /deliveries/{id} { allow read: if isManager(); allow write: if false; }
+    match /stockCounts/{id} { allow read: if isManager(); allow write: if false; }
+    match /audit/{id} { allow read: if isManager(); allow write: if false; }
 
     function validNewOrder(orderId) {
       let d = request.resource.data;

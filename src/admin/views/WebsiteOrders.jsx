@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
-import { collection, doc, getDocs, limit, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore/lite'
-import { db } from '../../cloud/firebase.js'
+import { useEffect, useState } from 'react'
+import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { liveDb } from '../live/firebase.js'
 import { formatGhs } from '../../cloud/site.js'
-import { EditorGate } from '../cloud.jsx'
-import { Card, Empty, Icon, Pill, Segmented } from '../components/ui.jsx'
 import { useOps } from '../hooks.js'
+import { Card, Empty, Icon, Pill, ReasonDialog, Segmented } from '../components/ui.jsx'
+import { Guide } from '../components/guide.jsx'
 
 export const WEB_STATUS = {
   new: { label: 'New', tone: 'blue' },
@@ -16,104 +16,111 @@ export const WEB_STATUS = {
 }
 const OPEN = ['new', 'confirmed', 'ready', 'out_for_delivery']
 
-// What the next sensible step is, in plain words.
 function nextSteps(order) {
   switch (order.status) {
-    case 'new': return [{ to: 'confirmed', label: 'I called them · Confirm order' }, { to: 'cancelled', label: 'Cancel order' }]
-    case 'confirmed': return order.fulfilment.method === 'pickup'
-      ? [{ to: 'ready', label: 'Ready for pickup' }, { to: 'cancelled', label: 'Cancel order' }]
-      : [{ to: 'out_for_delivery', label: 'Sent out for delivery' }, { to: 'cancelled', label: 'Cancel order' }]
-    case 'ready': case 'out_for_delivery': return [{ to: 'completed', label: 'Customer has it · Complete' }]
+    case 'new': return [{ action: 'confirm', label: 'I called them · Confirm' }]
+    case 'confirmed': return order.fulfilment?.method === 'pickup' ? [{ action: 'ready', label: 'Packed · Ready for pickup' }] : [{ action: 'out_for_delivery', label: 'Sent out for delivery' }]
+    case 'ready': case 'out_for_delivery': return [{ action: 'complete', label: 'Customer has it · Complete' }]
     default: return []
   }
 }
 
 function paymentText(payment) {
-  if (payment?.status === 'confirmed') return { tone: 'green', text: 'Paid · checked in Paystack' }
-  if (payment?.status === 'reported') return { tone: 'amber', text: 'Paid online · check in Paystack' }
+  if (payment?.status === 'confirmed') return { tone: 'green', text: 'Paid · Paystack check recorded' }
+  if (payment?.status === 'reported') return { tone: 'amber', text: 'Paid online · check Paystack' }
   if (payment?.status === 'paid_offline') return { tone: 'green', text: 'Paid (cash or MoMo)' }
   return { tone: 'grey', text: 'Not paid yet' }
 }
 
-const when = (timestamp) => (timestamp?.toDate ? timestamp.toDate().toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '')
+const when = (timestamp) => {
+  const date = timestamp?.toDate ? timestamp.toDate() : null
+  return date ? date.toLocaleString('en-GB', { timeZone: 'Africa/Accra', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
+}
 
-export default function WebsiteOrders() {
-  return <div className="stack">
-    <p className="muted">Orders customers placed on the website. Call each new customer to confirm, then move the order along.</p>
-    <EditorGate purpose="Website orders hold customers' names and phone numbers, so you need to sign in.">{(user) => <OrderList user={user} />}</EditorGate>
+function PaymentRecord({ order }) {
+  const payment = order.payment || {}
+  const online = payment.method === 'paystack'
+  const checked = payment.checkedAt || payment.checkedBy
+  return <div className="web-payment-record">
+    <span className="eyebrow">Payment record</span>
+    <p><b>{online ? 'Paystack online payment' : payment.method === 'pay_later' ? 'Payment on delivery / pickup' : 'Offline payment'}</b></p>
+    {payment.reference ? <p className="small">Reference: <span className="mono">{payment.reference}</span></p> : null}
+    <p className="small">Order total: <b>{formatGhs(order.total)}</b></p>
+    {online && !checked ? <p className="small warn-text">Awaiting a manual Paystack dashboard check before dispatch.</p> : null}
+    {checked ? <p className="small good-text">Checked by {payment.checkedBy?.name || 'staff'}{payment.checkedAt ? ` · ${new Date(payment.checkedAt).toLocaleString('en-GB', { timeZone: 'Africa/Accra', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}</p> : null}
   </div>
 }
 
-function OrderList({ user }) {
-  const { toast } = useOps()
+export function useWebOrders() {
   const [orders, setOrders] = useState(null)
+  useEffect(() => onSnapshot(query(collection(liveDb, 'orders'), orderBy('createdAt', 'desc'), limit(300)), (snap) => setOrders(snap.docs.map((item) => ({ id: item.id, ...item.data() }))), () => setOrders([])), [])
+  return orders
+}
+
+export default function WebsiteOrders() {
+  const { call } = useOps()
+  const orders = useWebOrders()
   const [filter, setFilter] = useState('open')
   const [busy, setBusy] = useState(null)
+  const [cancelling, setCancelling] = useState(null)
 
-  const load = useCallback(async () => {
-    try {
-      const snap = await getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(200)))
-      setOrders(snap.docs.map((item) => ({ id: item.id, ...item.data() })))
-    } catch {
-      toast('Could not load website orders. Check your internet and try again.', 'error')
-      setOrders([])
-    }
-  }, [toast])
-  useEffect(() => { load() }, [load])
-
-  const change = async (order, patch, message) => {
+  const act = async (order, action, extra = {}, message) => {
     setBusy(order.id)
-    try {
-      await updateDoc(doc(db, 'orders', order.id), { ...patch, updatedAt: serverTimestamp(), updatedBy: user.uid })
-      setOrders((list) => list.map((item) => (item.id === order.id ? { ...item, ...patch } : item)))
-      toast(message)
-    } catch {
-      toast('Could not update the order. Try again.', 'error')
-    }
+    const result = await call('updateWebOrder', { orderId: order.id, action, ...extra }, { success: message })
     setBusy(null)
+    return result
   }
 
-  if (!orders) return <p className="muted">Loading orders…</p>
+  if (!orders) return <p className="muted">Loading website orders…</p>
   const open = orders.filter((order) => OPEN.includes(order.status))
   const shown = filter === 'open' ? open : orders
 
-  return <>
-    <div className="website-toolbar">
-      <Segmented label="Which orders" value={filter} onChange={setFilter} options={[{ value: 'open', label: 'To do', count: open.length }, { value: 'all', label: 'All', count: orders.length }]} />
-      <button type="button" className="btn ghost" onClick={load}><Icon name="reset" size={16} /> Refresh</button>
-    </div>
+  return <div className="stack">
+    <Guide id="web-orders" title="How to handle a website order" steps={[
+      'Call the customer on the number shown to check the order and the delivery address.',
+      'Press Confirm. This takes the items out of shop stock. If something is out of stock you will be told before anything changes.',
+      'Pack the order. For pickup press Ready for pickup; for delivery press Sent out for delivery.',
+      'When the customer has it, press Complete. Mark the payment once it is checked.',
+    ]} />
+    <Segmented label="Which orders" value={filter} onChange={setFilter} options={[{ value: 'open', label: 'To do', count: open.length }, { value: 'all', label: 'All', count: orders.length }]} />
     {shown.length ? shown.map((order) => {
       const pay = paymentText(order.payment)
       const status = WEB_STATUS[order.status] || WEB_STATUS.new
+      const phone = String(order.customer?.phone || '')
       return <Card key={order.id} title={<span className="web-order-title"><span className="mono">{order.ref}</span> <Pill tone={status.tone}>{status.label}</Pill> <Pill tone={pay.tone}>{pay.text}</Pill></span>} actions={<span className="muted small">{when(order.createdAt)}</span>}>
         <div className="web-order">
           <div className="stack">
             <div>
               <b>{order.customer?.name}</b>
               <div className="contact-links">
-                <a href={`tel:${String(order.customer?.phone || '').replace(/\s/g, '')}`}><Icon name="customers" size={14} /> {order.customer?.phone}</a>
-                {order.customer?.email ? <a href={`mailto:${order.customer.email}`}>{order.customer.email}</a> : null}
+                <a className="chip small-chip" href={`tel:${phone.replace(/\s/g, '')}`}><Icon name="user" size={14} /> Call {phone}</a>
+                <a className="chip small-chip" href={`https://wa.me/233${phone.replace(/\D/g, '').slice(1)}`} target="_blank" rel="noreferrer"><Icon name="whatsapp" size={14} /> WhatsApp</a>
               </div>
             </div>
-            <p className="small">{order.fulfilment?.method === 'delivery' ? <><Icon name="delivery" size={14} /> Deliver to: {order.fulfilment.address}</> : 'Pickup at the shop'}</p>
+            <p className="small">{order.fulfilment?.method === 'delivery' ? <><Icon name="delivery" size={14} /> <b>Delivery</b><br />{order.fulfilment.address}</> : <><b>Pickup</b><br />Customer collects from the shop.</>}</p>
             {order.fulfilment?.notes ? <p className="small muted">Customer note: {order.fulfilment.notes}</p> : null}
+            {order.cancel ? <p className="small muted">Cancelled by {order.cancel.by?.name}: “{order.cancel.reason}”</p> : null}
+            <PaymentRecord order={order} />
           </div>
-          <div>
-            <table className="table web-order-lines"><tbody>
-              {(order.lines || []).map((line) => <tr key={line.id}><td>{line.qty} ×</td><td>{line.name}<span className="muted small block">{line.brand}{line.size ? ` · ${line.size}` : ''} · {formatGhs(line.price)} each</span></td><td className="nowrap">{formatGhs(line.lineTotal)}</td></tr>)}
-              <tr><td /><td>{order.fulfilment?.method === 'delivery' ? 'Delivery' : 'Pickup'}</td><td className="nowrap">{order.deliveryFee === null ? 'Agree on phone' : formatGhs(order.deliveryFee || 0)}</td></tr>
-              <tr className="strong"><td /><td>Total</td><td className="nowrap">{formatGhs(order.total)}</td></tr>
-            </tbody></table>
-            {order.payment?.status === 'reported' ? <p className="small warn-text">Before you send this order, open Paystack and check that reference <span className="mono">{order.payment.reference}</span> was paid {formatGhs(order.total)}.</p> : null}
-          </div>
+          <table className="table web-order-lines"><tbody>
+            {(order.lines || []).map((line) => <tr key={line.id}><td>{line.image ? <img className="web-order-line-image" src={line.image} alt="" referrerPolicy="no-referrer" /> : <span className="web-order-line-image placeholder" aria-hidden="true" />}</td><td>{line.qty} × <b>{line.name}</b><span className="muted small block">{[line.brand, line.size].filter(Boolean).join(' · ')} · {formatGhs(line.price)} each</span></td><td className="nowrap">{formatGhs(line.lineTotal)}</td></tr>) }
+            <tr><td /><td>{order.fulfilment?.method === 'delivery' ? 'Delivery' : 'Pickup'}</td><td className="nowrap">{order.deliveryFee === null ? 'Agree on phone' : formatGhs(order.deliveryFee || 0)}</td></tr>
+            <tr className="strong"><td /><td>Total</td><td className="nowrap">{formatGhs(order.total)}</td></tr>
+          </tbody></table>
         </div>
-        <div className="row web-order-actions">
-          {nextSteps(order).map((step) => <button key={step.to} type="button" className={`btn ${step.to === 'cancelled' ? 'ghost' : 'primary'}`} disabled={busy === order.id}
-            onClick={() => { if (step.to !== 'cancelled' || window.confirm(`Cancel order ${order.ref}? If they paid, refund them in Paystack.`)) change(order, { status: step.to }, `${order.ref}: ${WEB_STATUS[step.to].label}.`) }}>{step.label}</button>)}
-          {order.payment?.status === 'reported' ? <button type="button" className="btn" disabled={busy === order.id} onClick={() => change(order, { payment: { ...order.payment, status: 'confirmed' } }, `${order.ref}: payment checked.`)}><Icon name="check" size={16} /> I checked the payment in Paystack</button> : null}
-          {!order.payment || order.payment.status === 'unpaid' ? <button type="button" className="btn" disabled={busy === order.id} onClick={() => change(order, { payment: { ...(order.payment || {}), status: 'paid_offline' } }, `${order.ref}: marked as paid.`)}><Icon name="check" size={16} /> Customer paid (cash or MoMo)</button> : null}
+        {order.payment?.status === 'reported' ? <p className="small warn-text">Before you send it, open Paystack and check that reference <span className="mono">{order.payment.reference}</span> was paid {formatGhs(order.total)}.</p> : null}
+        <div className="button-grid">
+          {nextSteps(order).map((step) => <button key={step.action} type="button" className="btn primary" disabled={busy === order.id} onClick={() => act(order, step.action, {}, `${order.ref}: done.`)}>{step.label}</button>)}
+          {order.payment?.status === 'reported' ? <button type="button" className="btn secondary" disabled={busy === order.id} onClick={() => act(order, 'payment_checked', {}, `${order.ref}: payment checked.`)}><Icon name="check" size={16} /> I checked Paystack</button> : null}
+          {OPEN.includes(order.status) && (!order.payment || order.payment.status === 'unpaid') ? <button type="button" className="btn secondary" disabled={busy === order.id} onClick={() => act(order, 'paid_offline', {}, `${order.ref}: marked as paid.`)}><Icon name="check" size={16} /> Customer paid (cash or MoMo)</button> : null}
+          {OPEN.includes(order.status) ? <button type="button" className="btn ghost" disabled={busy === order.id} onClick={() => setCancelling(order)}>Cancel order</button> : null}
         </div>
       </Card>
-    }) : <Empty title={filter === 'open' ? 'Nothing to do' : 'No website orders yet'}>{filter === 'open' ? 'New website orders appear here.' : 'When customers order on the website, the orders appear here.'}</Empty>}
-  </>
+    }) : <Empty title={filter === 'open' ? 'Nothing to do' : 'No website orders yet'}>{filter === 'open' ? 'New website orders appear here as soon as they are placed.' : 'When customers order on the website, the orders appear here.'}</Empty>}
+    {cancelling ? <ReasonDialog title={`Cancel order ${cancelling.ref}?`} destructive confirmLabel="Cancel order"
+      intro={<p className="small">{cancelling.stockTaken?.length ? 'The items go back into shop stock. ' : ''}If the customer already paid, refund them (in Paystack for online payments).</p>}
+      presets={['Customer cancelled', 'Could not reach the customer', 'Out of stock']}
+      onConfirm={async (reason) => Boolean(await act(cancelling, 'cancel', { reason }, `${cancelling.ref} cancelled.`))}
+      onClose={() => setCancelling(null)} /> : null}
+  </div>
 }
