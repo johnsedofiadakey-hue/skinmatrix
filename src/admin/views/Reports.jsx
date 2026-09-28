@@ -9,6 +9,7 @@ import { Card, Empty, Icon, Money, Segmented, Stat } from '../components/ui.jsx'
 import { Guide } from '../components/guide.jsx'
 import { PrintArea, printNow } from '../components/receipt.jsx'
 import { downloadCsv, fmtDayKey, fmtFull, fmtWhen } from '../components/format.js'
+import { DrawerReport } from './Drawer.jsx'
 
 const PERIODS = [
   { value: 'today', label: 'Today', days: 1 },
@@ -66,6 +67,7 @@ export default function Reports() {
   const range = period === 'custom' ? custom : { from: businessDay(now - (PERIODS.find((item) => item.value === period).days - 1) * DAY), to: today }
   const sales = useRange('sales', range.from, range.to)
   const saleCosts = useRange('saleCosts', range.from, range.to)
+  const shifts = useRange('shifts', range.from, range.to)
   const costs = useMemo(() => new Map((saleCosts || []).map((row) => [row.id, row])), [saleCosts])
   const summary = useMemo(() => summarizeSales(sales || [], costs), [sales, costs])
   const label = range.from === range.to ? fmtDayKey(range.from) : `${fmtDayKey(range.from)} – ${fmtDayKey(range.to)}`
@@ -77,7 +79,7 @@ export default function Reports() {
 
   return <div className="stack">
     <Guide id="reports" title="Closing the day" steps={[
-      'At closing time open Today and look at “Cash in the drawer”. Count the drawer; the two should match.',
+      'Each cashier counts and closes their own drawer (Cash drawer). Drawers shows every count and any difference.',
       'Check the MoMo total against the shop MoMo statement.',
       'Press Print day summary to keep a paper copy, or Download for Excel.',
       'Profit uses the cost you typed when receiving deliveries. Products with no cost count as zero cost.',
@@ -90,10 +92,11 @@ export default function Reports() {
       </div> : null}
     </div>
     <p className="muted">{label}</p>
-    <Segmented label="Report" value={tab} onChange={setTab} options={[{ value: 'money', label: 'Money' }, { value: 'products', label: 'Products' }, { value: 'activity', label: 'Activity' }]} />
+    <Segmented label="Report" value={tab} onChange={setTab} options={[{ value: 'money', label: 'Money' }, { value: 'products', label: 'Products' }, { value: 'drawers', label: 'Drawers' }, { value: 'activity', label: 'Activity' }]} />
     {sales === null ? <p className="muted">Loading…</p> : null}
     {sales && tab === 'money' ? <MoneyReport summary={summary} label={label} onCsv={exportCsv} /> : null}
     {sales && tab === 'products' ? <ProductReport summary={summary} /> : null}
+    {tab === 'drawers' ? <DrawerReport shifts={shifts} /> : null}
     {tab === 'activity' ? <Activity range={range} /> : null}
   </div>
 }
@@ -154,7 +157,7 @@ function ProductReport({ summary }) {
   </Card>
 }
 
-const AUDIT_LABEL = { sale: 'Sale', void: 'Sale cancelled', return: 'Return', web_order: 'Website order', delivery: 'Delivery', stock_adjustment: 'Stock adjusted', write_off: 'Write-off', stock_count: 'Stock take', product_setup: 'Product setup', supplier: 'Supplier', staff: 'Team' }
+const AUDIT_LABEL = { shift: 'Cash drawer', settings: 'Settings', web_payment: 'Website payment', sale: 'Sale', void: 'Sale cancelled', return: 'Return', web_order: 'Website order', delivery: 'Delivery', stock_adjustment: 'Stock adjusted', write_off: 'Write-off', stock_count: 'Stock take', product_setup: 'Product setup', supplier: 'Supplier', staff: 'Team' }
 
 function Activity({ range }) {
   const now = useNow(60000)

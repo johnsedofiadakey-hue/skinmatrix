@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { signOut } from 'firebase/auth'
 import { LiveProvider, useAccount } from './LiveProvider.jsx'
 import { useHashRoute, useNow, useOps } from './hooks.js'
@@ -9,15 +9,19 @@ import { fmtFull } from './components/format.js'
 import SignIn from './views/SignIn.jsx'
 import Home from './views/Home.jsx'
 import Sell from './views/Sell.jsx'
-import Sales from './views/Sales.jsx'
-import WebsiteOrders, { useWebOrders } from './views/WebsiteOrders.jsx'
-import Stock from './views/Stock.jsx'
-import Reports from './views/Reports.jsx'
-import Setup from './views/Setup.jsx'
-import Team from './views/Team.jsx'
-import Website from './views/Website.jsx'
-import Account from './views/Account.jsx'
-import Help from './views/Help.jsx'
+import WebsiteOrders, { needsAction, useWebOrders } from './views/WebsiteOrders.jsx'
+
+// Pages used less often load when first opened, so the till starts quickly.
+const Sales = lazy(() => import('./views/Sales.jsx'))
+const Drawer = lazy(() => import('./views/Drawer.jsx'))
+const Stock = lazy(() => import('./views/Stock.jsx'))
+const Reports = lazy(() => import('./views/Reports.jsx'))
+const Setup = lazy(() => import('./views/Setup.jsx'))
+const Team = lazy(() => import('./views/Team.jsx'))
+const Website = lazy(() => import('./views/Website.jsx'))
+const Settings = lazy(() => import('./views/Settings.jsx'))
+const Account = lazy(() => import('./views/Account.jsx'))
+const Help = lazy(() => import('./views/Help.jsx'))
 
 // Every page, who may open it, and where it sits: in the phone bar at the bottom (tab) or under More.
 const PAGES = [
@@ -25,11 +29,13 @@ const PAGES = [
   { path: 'sell', label: 'POS', icon: 'pos', action: 'sell', tab: true },
   { path: 'sales', label: 'POS history', short: 'History', icon: 'sale', action: 'viewSales', tab: true },
   { path: 'orders', label: 'Website orders', short: 'Web orders', icon: 'cart', action: 'webOrders', tab: true },
+  { path: 'drawer', label: 'Cash drawer', icon: 'drawer', action: 'sell' },
   { path: 'stock', label: 'Stock', icon: 'inventory', action: 'viewStock' },
   { path: 'reports', label: 'Reports', icon: 'ledger', action: 'reports' },
   { path: 'setup', label: 'Products', icon: 'products', action: 'products' },
   { path: 'team', label: 'Team', icon: 'staff', action: 'staff' },
   { path: 'website', label: 'Website editor', icon: 'globe', action: 'website' },
+  { path: 'settings', label: 'Settings', icon: 'settings', action: 'settings' },
   { path: 'account', label: 'Account', icon: 'user' },
   { path: 'help', label: 'Help', icon: 'help' },
 ]
@@ -83,7 +89,7 @@ function NoAccess({ account }) {
 }
 
 function Shell() {
-  const { can, me, online, signOut: leave } = useOps()
+  const { can, me, online, offlineSales, signOut: leave } = useOps()
   const parts = useHashRoute()
   const now = useNow(30000)
   const [more, setMore] = useState(false)
@@ -92,7 +98,7 @@ function Shell() {
   const [section = 'home', sub] = parts
   const current = PAGES.find((page) => page.path === section)
   const permitted = current && allowed.includes(current)
-  const badges = { orders: (orders || []).filter((order) => order.status === 'new').length }
+  const badges = { orders: (orders || []).filter(needsAction).length }
   const tabs = allowed.filter((page) => page.tab)
   const moreActive = current && !current.tab
 
@@ -102,16 +108,18 @@ function Shell() {
   else if (section === 'sell') page = <Sell />
   else if (section === 'sales') page = <Sales />
   else if (section === 'orders') page = <WebsiteOrders />
+  else if (section === 'drawer') page = <Drawer />
   else if (section === 'stock') page = <Stock tab={sub} />
   else if (section === 'reports') page = <Reports />
   else if (section === 'setup') page = <Setup />
   else if (section === 'team') page = <Team />
   else if (section === 'website') page = <Website />
+  else if (section === 'settings') page = <Settings />
   else if (section === 'account') page = <Account />
   else if (section === 'help') page = <Help />
 
   return <>
-    {!online ? <div className="offline-bar" role="status">No internet. You can look around, but sales and changes cannot be saved until it is back.</div> : null}
+    {!online ? <div className="offline-bar" role="status">No internet. You can still sell: sales are kept on this till and sent when it is back{offlineSales.length ? ` (${offlineSales.length} waiting)` : ''}. Don’t reload this page. Other changes must wait.</div> : null}
     <div className={`frame ${section === 'sell' ? 'is-sell' : ''}`}>
       <aside className="sidebar">
         <a href="#/home" className="brand-mark"><span className="brand-name">SkinMatrix</span><span className="brand-sub">Shop system</span></a>
@@ -139,7 +147,7 @@ function Shell() {
             <a className="avatar small mobile-only" href="#/account" aria-label="My account">{me.name.slice(0, 1)}</a>
           </div>
         </header>
-        <main className="page" id="main">{page}</main>
+        <main className="page" id="main"><Suspense fallback={<p className="muted">Loading…</p>}>{page}</Suspense></main>
       </div>
     </div>
     <nav className="bottom-nav" aria-label="Main">

@@ -1,6 +1,6 @@
 # SkinMatrix — Agent Handover
 
-Last updated: 2026-09-26 (production admin). Read this first, then `CLAUDE_HANDOVER.md` (original brief).
+Last updated: 2026-09-28 (server-priced web orders, Paystack verification, cash drawers, offline till, VAT receipts, SMS). Read this first, then `CLAUDE_HANDOVER.md` (original brief).
 
 ## The business
 - **One shop** (single branch) in Ghana selling skincare and supplements. Prices in GHS. Stock lives at the shop only; there is no warehouse.
@@ -19,7 +19,7 @@ Last updated: 2026-09-26 (production admin). Read this first, then `CLAUDE_HANDO
 ```bash
 npm install && (cd functions && npm install)
 npm test                 # Vitest: storefront/cloud unit tests
-npm run test:functions   # 17 server tests on the Firestore + Auth emulators (needs JDK 21, see below)
+npm run test:functions   # 30 server tests on the Firestore + Auth emulators (needs JDK 21, see below)
 npm run build            # both entries
 ```
 The emulators need Java 21: `export JAVA_HOME=/opt/homebrew/opt/openjdk@21 PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH`.
@@ -40,7 +40,19 @@ The emulators need Java 21: `export JAVA_HOME=/opt/homebrew/opt/openjdk@21 PATH=
 
 Pure rules: `src/core/{rules,sale,stock,time}.js`. The client imports these too (single source of truth).
 
-**Commands:** `completeSale`, `voidSale`, `returnItems`, `updateWebOrder` (confirm takes stock; cancel puts it back), `receiveDelivery`, `adjustStock`, `writeOffExpired`, `submitStockCount` (refused with `details.stale` if stock moved mid-count), `saveProductSetup`, `saveSupplier`, `claimOwner`, `createStaff` (returns a one-time 12-character password), `updateStaff` (turning someone off disables Auth and revokes tokens; there is always one active owner), `setMyPin`, `recordSignIn`.
+Other server modules: `src/web.js` (website checkout, no sign-in), `src/shifts.js` (cash drawers), `src/settings.js` (owner settings), `src/sms.js` (Arkesel), `src/shared.js` (helpers every command uses). Pure rules also in `src/core/{order,shift,tax}.js`.
+
+**Commands:** `placeWebOrder`, `verifyWebPayment` (public), `paystackWebhook` (HTTP), `openShift`, `cashMovement`, `closeShift`, `saveShopSettings`, `completeSale`, `voidSale`, `returnItems`, `updateWebOrder` (confirm takes stock; cancel puts it back), `receiveDelivery`, `adjustStock`, `writeOffExpired`, `submitStockCount` (refused with `details.stale` if stock moved mid-count), `saveProductSetup`, `saveSupplier`, `claimOwner`, `createStaff` (returns a one-time 12-character password), `updateStaff` (turning someone off disables Auth and revokes tokens; there is always one active owner), `setMyPin`, `recordSignIn`.
+
+**Website orders:** the checkout sends only product ids, quantities and details to `placeWebOrder`, which prices from `site/catalog` + `site/content.checkout.deliveryFee`, refuses hidden/unpriced/out-of-stock (`site/availability`) items, limits 5 waiting orders per phone, generates the ref and saves the order. Clients can no longer write `orders` at all. Paystack: the order is saved first with `payment.status: 'pending'`, the popup charges the server's total with reference `SM-XXXXXX-ABCD` (new suffix per attempt), then `verifyWebPayment` asks Paystack's verify API; the signed webhook (`charge.success`, HMAC-SHA512) does the same if the browser closes. Result: `paid` (amount and GHS match), or `mismatch` (a manager can accept after checking). Staff cannot confirm a `pending` order. Without the `PAYSTACK_SECRET_KEY` secret, verify falls back to the old `reported` + manual check.
+
+**Cash drawers (shifts):** `shifts/{id}`, and `staff/{uid}.openShiftId`. Cash sales need an open drawer (MoMo and card don't). Cash refunds (void or return) come out of the refunder's drawer. Cash out needs `cashOut` (manager/owner) or an approval PIN. Closing records counted, expected and difference, and needs a note when they differ. Managers can close someone else's. Reports → Drawers lists them. The staff drawer page is a blind count (expected is shown only to managers).
+
+**Offline till:** admin Firestore uses persistent cache. If the device is offline or `completeSale` fails with a connection error, the sale is queued in localStorage (`skinmatrix-offline-sales-{uid}`, `live/offlineSales.js`) with the *same* requestId, and a provisional receipt prints. `LiveProvider` retries every 30 s and when back online, sending `offline: { at, shiftId, clientTotal }`. The server keeps the real sale time, charges what the customer paid (the difference from today's price goes in `sale.offline.adjustment` and the audit log), puts cash on the original drawer (`lateCash` if already closed), and refuses anything older than 7 days. Refused sales show on POS for retry, or a manager can remove them from that device. Discounts needing a PIN can't be done offline. Not solved: reloading the page while offline (no service worker).
+
+**Settings (owner):** `settings/shop`: `tax { registered, tin, vatBp, nhilBp, getfundBp }` (defaults 15/2.5/2.5% on the same base; **confirm with the accountant**) and `sms { enabled, senderId, orderPlaced, orderUpdates, saleReceipt }`. Sales store `tax` (a breakdown of the tax-inclusive total) and receipts print it with the TIN. SMS goes through Arkesel (`ARKESEL_API_KEY` secret) after the transaction and never fails the order or sale. Every attempt is logged in `smsLog`.
+
+**Secrets:** `firebase functions:secrets:set PAYSTACK_SECRET_KEY` and `ARKESEL_API_KEY` before deploying (deploy asks for them if missing; use any placeholder for SMS until there's an Arkesel account). The local emulator reads `functions/.secret.local` (gitignored). Paystack dashboard → Webhook URL: `https://europe-west2-skinmatrixgh.cloudfunctions.net/paystackWebhook`.
 
 **Approvals:** staff actions above their limit get `approval_required`. `LiveProvider.call()` opens `ApprovalDialog`: a manager or the owner picks their name and types their PIN on the cashier's screen, and the call is retried with `approval: {approverId, pin}`. PINs are scrypt-hashed in `staffSecrets/{uid}`; 5 wrong tries lock that approver for 15 minutes.
 
@@ -59,7 +71,8 @@ Pure rules: `src/core/{rules,sale,stock,time}.js`. The client imports these too 
 - `AdminApp.jsx`: sign-in states (loading / signed out / first setup / not on team / turned off), role-based navigation (sidebar ≥ 900 px; bottom tab bar + "More" sheet on phones).
 - `LiveProvider.jsx`: live listeners plus `call()`.
 - `live/firebase.js`: SDK wiring and error reading.
-- Views: `Home`, `Sell` (POS), `Sales` (reprint, WhatsApp, return, cancel), `WebsiteOrders`, `Stock` (list, batches, adjust, receive delivery, stock take, write-off), `Reports` (money, cash in drawer, profit, by staff, best sellers, activity log, printable day summary, CSV), `Setup` (products: barcode, SKU, cost, low-stock level, expiry), `Team`, `Website` (other agent's editor, owner only), `Account` (password, approval PIN, auto-print), `Help`.
+- Pages other than Home, POS and Website orders are lazy-loaded (`React.lazy`). The admin JS is still about 800 kB, and most of that is the Firebase SDK (full Firestore + Auth).
+- Views: `Home`, `Sell` (POS; offline queue in `components/offline.jsx`), `Drawer` (cash drawer + `DrawerReport`), `Settings` (owner: VAT, SMS, SMS log), `Sales` (reprint, WhatsApp, return, cancel), `WebsiteOrders`, `Stock` (list, batches, adjust, receive delivery, stock take, write-off), `Reports` (money, cash in drawer, profit, by staff, best sellers, activity log, printable day summary, CSV), `Setup` (products: barcode, SKU, cost, low-stock level, expiry), `Team`, `Website` (other agent's editor, owner only), `Account` (password, approval PIN, auto-print), `Help`.
 - Every page has a `Guide` (how-to box that can be folded away; remembered per device).
 - **Receipts:** `components/receipt.jsx`. `PrintArea` is portalled into `<body>`; `@media print` in `admin.css` prints only it at 80 mm (`@page size 80mm`). Auto-print is a per-device option. WhatsApp receipts use `wa.me`.
 - **Scanners:** `components/scanner.jsx`. USB/Bluetooth scanners are detected as fast keystrokes + Enter when no text box has focus (keys ≤ 120 ms apart, Enter within 400 ms). Camera: native `BarcodeDetector`, else lazy-loaded `@zxing/browser`. Needs HTTPS.
@@ -81,12 +94,21 @@ Pure rules: `src/core/{rules,sale,stock,time}.js`. The client imports these too 
 3. The owner signs in at `/admin/` with the account in `admins/{uid}` and presses "Set up the shop as owner". Then: Account → set PIN; Products → barcodes and costs; Stock → Receive delivery for the opening stock; Team → add staff.
 4. On the till PC: Help → Receipt printer (80 mm paper, margins None, optional `--kiosk-printing`).
 
+## Verified (2026-09-28)
+- `npm test` 17/17, `npm run test:functions` 30/30, `npm run build` passes (storefront still preloads only the same 240 kB chunk as before).
+- Browser pass on the emulators:
+  - open drawer; cash sale with VAT/NHIL/GETFund receipt;
+  - offline sale (simulated) with a provisional receipt, auto-synced as sale 2;
+  - close drawer short by GHS 10 with a note;
+  - storefront pay-later order placed through `placeWebOrder` and shown in Website orders;
+  - Settings page; drawer page at 375 px.
+- **Not verified:** real Paystack (test keys) end to end with the webhook, a real Arkesel SMS, deploy.
+
 ## Open work, in priority order
-1. **Storefront should read `site/availability`** to show out-of-stock (other agent's area). The website editor still has its own `inStock` flag on `site/catalog`.
-2. Website orders still take **prices from the browser**; staff check the total against Paystack. Proper fix: a function that re-prices and verifies Paystack by webhook (needs the Paystack secret in Functions config).
-3. Shift and cash-up (opening float, paid-outs, counted vs expected per cashier). Reports already show "cash in the drawer" per day.
-4. SMS to customers; VAT/NHIL/GETFund on receipts if VAT-registered; offline selling (today: no internet = no sale, clearly shown).
-5. Main admin bundle is ~760 kB. Code-split `Website.jsx` and the reports if load time matters.
+1. Deploy (ask first): set both secrets, `npm run build && firebase deploy --only functions,firestore:rules,hosting`, add the Paystack webhook URL. Then place a Paystack **test-mode** order to check verify + webhook.
+2. Confirm the tax rates and the TIN format with the accountant before turning VAT on.
+3. Offline: a service worker so the admin page can also be *reloaded* while offline. Consider App Check on `placeWebOrder` if spam orders appear.
+4. The editor's own `inStock` flag still exists; `site/availability` overrides it once a product has stock records.
 
 ## Conventions
 - Money is always integer pesewas (`src/admin/lib/money.js` for display and parsing).

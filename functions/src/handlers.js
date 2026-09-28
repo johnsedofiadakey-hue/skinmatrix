@@ -1,156 +1,25 @@
 // Every command the admin can send. Each one checks who is asking (their staff profile, not the device),
 // re-reads prices from the catalogue, and changes sales, stock and the audit log together in one Firestore
 // transaction, so a failed command changes nothing.
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { can, DISCOUNT_LIMIT, isValidPin, RETURN_WINDOW_DAYS, requireReason, ROLE_LABEL, ROLES, RuleError } from './core/rules.js'
-import { allocateFefo, checkExpiry, checkLot, sellableFromSummary, summarize } from './core/stock.js'
-import { applyDiscount, checkPayment, cleanCustomer, discountNeedsApproval, isValidBarcode, priceCart, returnedQuantity, returnValue } from './core/sale.js'
+import { checkExpiry, checkLot } from './core/stock.js'
+import { applyDiscount, checkOffline, checkPayment, cleanCustomer, discountNeedsApproval, isValidBarcode, priceCart, returnedQuantity, returnValue } from './core/sale.js'
 import { businessDay, DAY } from './core/time.js'
-
-const actorRef = (staff) => ({ uid: staff.uid, name: staff.name, role: staff.role })
-const pad = (number) => String(number).padStart(6, '0')
-
-// ── Who is asking ──────────────────────────────────────────────────────────────────────────────
-
-async function requireStaff(db, uid, action) {
-  if (!uid) throw new RuleError('unauthenticated', 'Please sign in again.')
-  const snap = await db.doc(`staff/${uid}`).get()
-  if (!snap.exists) throw new RuleError('not_staff', 'This account is not set up as SkinMatrix staff. Ask the owner to add you.')
-  const staff = { uid, ...snap.data() }
-  if (staff.active === false) throw new RuleError('account_disabled', 'This staff account has been turned off.')
-  if (action && !can(staff.role, action)) throw new RuleError('forbidden', 'Your role cannot do this.')
-  return staff
-}
-
-function hashPin(pin, salt = randomBytes(16).toString('hex')) {
-  return { salt, hash: scryptSync(String(pin), salt, 32).toString('hex') }
-}
-
-// A manager or the owner approves at the till with their PIN. Five wrong PINs lock the approver for 15 minutes.
-// check(person) returns '' if that person may do the action, otherwise the reason they may not.
-async function verifyApproval(db, approval, requester, check, now) {
-  if (!approval) return null
-  const approverId = String(approval.approverId ?? '')
-  if (!approverId || approverId === requester.uid) throw new RuleError('bad_approval', 'Someone else has to approve this.')
-  const snap = await db.doc(`staff/${approverId}`).get()
-  const approver = snap.exists ? { uid: approverId, ...snap.data() } : null
-  if (!approver || approver.active === false || !can(approver.role, 'approve')) throw new RuleError('bad_approval', 'Choose an active manager or the owner.')
-  const why = check(approver)
-  if (why) throw new RuleError('forbidden', `${approver.name} cannot approve this either: ${why}`)
-  const secretRef = db.doc(`staffSecrets/${approverId}`)
-  const ok = await db.runTransaction(async (tx) => {
-    const secret = (await tx.get(secretRef)).data()
-    if (!secret?.pinHash) throw new RuleError('no_pin', `${approver.name} has not set an approval PIN yet (Staff → My approval PIN).`)
-    if ((secret.lockedUntil ?? 0) > now) throw new RuleError('pin_locked', `Too many wrong PINs for ${approver.name}. Try again in 15 minutes.`)
-    const given = scryptSync(String(approval.pin ?? ''), secret.pinSalt, 32)
-    const match = timingSafeEqual(given, Buffer.from(secret.pinHash, 'hex'))
-    const failed = match ? 0 : (secret.failedAttempts ?? 0) + 1
-    tx.set(secretRef, { failedAttempts: failed >= 5 ? 0 : failed, lockedUntil: failed >= 5 ? now + 15 * 60 * 1000 : 0 }, { merge: true })
-    return match
-  })
-  if (!ok) throw new RuleError('bad_pin', `That PIN is not right for ${approver.name}.`)
-  return approver
-}
-
-function approvalCheck(staff, approver, check) {
-  const why = check(staff)
-  if (!why) return null
-  if (!approver) throw new RuleError('approval_required', `${why} A manager or the owner can approve with their PIN.`)
-  return actorRef(approver)
-}
-
-// ── Shared reads and writes inside a transaction ──────────────────────────────────────────────
-
-async function readCatalog(tx, db) {
-  const snap = await tx.get(db.doc('site/catalog'))
-  return Array.isArray(snap.data()?.products) ? snap.data().products : []
-}
-
-// All batches of the given products (including empty ones), keyed by product.
-async function readBatches(tx, db, productIds) {
-  const result = new Map(productIds.map((id) => [id, []]))
-  const ids = [...new Set(productIds)]
-  for (let i = 0; i < ids.length; i += 30) {
-    const snap = await tx.get(db.collection('batches').where('productId', 'in', ids.slice(i, i + 30)))
-    for (const doc of snap.docs) result.get(doc.data().productId)?.push({ id: doc.id, ...doc.data() })
-  }
-  return result
-}
-
-async function readAvailability(tx, db) {
-  return (await tx.get(db.doc('site/availability'))).data()?.products || {}
-}
-
-// After batches change: the readable stock summary, and the public in-stock flag the website uses.
-function writeStock(tx, db, batchesByProduct, availability, now) {
-  const nextAvailability = { ...availability }
-  for (const [productId, batches] of batchesByProduct) {
-    const summary = summarize(batches, now)
-    tx.set(db.doc(`stock/${productId}`), { productId, ...summary, updatedAt: now })
-    nextAvailability[productId] = sellableFromSummary(summary, now) > 0
-  }
-  if (JSON.stringify(nextAvailability) !== JSON.stringify(availability)) tx.set(db.doc('site/availability'), { products: nextAvailability, updatedAt: now })
-}
-
-function writeBatch(tx, db, batch) {
-  const { id, ...data } = batch
-  tx.set(db.doc(`batches/${id}`), data)
-}
-
-function audit(tx, db, now, staff, type, ref, summary, detail = '') {
-  tx.set(db.collection('audit').doc(), { at: now, day: businessDay(now), type, actor: actorRef(staff), ref: ref || null, summary, detail })
-}
-
-function movement(tx, db, now, staff, { productId, batch, delta, kind, ref, reason = '' }) {
-  tx.set(db.collection('movements').doc(), { at: now, productId, batchId: batch.id, lot: batch.lot, delta, kind, ref: ref || null, by: staff.name, reason })
-}
-
-// Takes quantity of each item from its batches (soonest expiry first) and returns the deductions.
-function takeFromBatches(batchesByProduct, items, now, products) {
-  const deductions = []
-  for (const item of items) {
-    const batches = batchesByProduct.get(item.productId) || []
-    const allocations = allocateFefo(batches, item.quantity, now)
-    if (!allocations) {
-      const available = batches.filter((batch) => batch.quantity > 0).reduce((sum, batch) => sum + batch.quantity, 0)
-      const name = products.find((product) => product.id === item.productId)?.name || item.name || 'This product'
-      throw new RuleError('insufficient_stock', `Only ${available} × ${name} in stock (not expired). Record a delivery or adjust stock first.`)
-    }
-    for (const allocation of allocations) {
-      const batch = batches.find((candidate) => candidate.id === allocation.batchId)
-      batch.quantity -= allocation.quantity
-      deductions.push({ productId: item.productId, batchId: batch.id, lot: batch.lot, quantity: allocation.quantity, unitCost: batch.unitCost ?? 0 })
-    }
-  }
-  return deductions
-}
-
-// Takes `quantity` of a product back out of recorded deductions, latest first. Mutates `deductions`.
-function releaseDeductions(deductions, productId, quantity) {
-  const released = []
-  let remaining = quantity
-  for (const deduction of [...deductions].reverse()) {
-    if (!remaining) break
-    if (deduction.productId !== productId || !deduction.quantity) continue
-    const back = Math.min(deduction.quantity, remaining)
-    released.push({ ...deduction, quantity: back })
-    deduction.quantity -= back
-    remaining -= back
-  }
-  return released
-}
-
-function checkRequestId(requestId) {
-  const id = String(requestId ?? '')
-  if (!/^[A-Za-z0-9-]{8,64}$/.test(id)) throw new RuleError('bad_request', 'Please try again.')
-  return id
-}
+import { taxBreakdown } from './core/tax.js'
+import { readSettings } from './settings.js'
+import { addCash, readOpenShift, requireShift } from './shifts.js'
+import { sendSms, smsText } from './sms.js'
+import { notifyCustomer } from './web.js'
+import { actorRef, approvalCheck, audit, checkRequestId, hashPin, movement, pad, readAvailability, readBatches, readCatalog, releaseDeductions, requireStaff, takeFromBatches, verifyApproval, writeBatch, writeStock } from './shared.js'
 
 // ── Sales at the till ─────────────────────────────────────────────────────────────────────────
 
-export async function completeSale({ db, uid, now }, data) {
+export async function completeSale(ctx, data) {
+  const { db, uid, now } = ctx
   const staff = await requireStaff(db, uid, 'sell')
   const requestId = checkRequestId(data?.requestId)
+  const offline = checkOffline(data?.offline, now)
   const discountCheck = (subtotal, amount) => (person) => (discountNeedsApproval(person.role, subtotal, amount) ? `Discounts over ${DISCOUNT_LIMIT[person.role]}% need approval.` : '')
 
   // Work out whether an approval is needed before the transaction, so the PIN is checked once.
@@ -161,15 +30,21 @@ export async function completeSale({ db, uid, now }, data) {
     ? await verifyApproval(db, data?.approval, staff, discountCheck(preview.subtotal, preview.amount), now)
     : null
 
-  return db.runTransaction(async (tx) => {
+  let created = false
+  const result = await db.runTransaction(async (tx) => {
     const requestRef = db.doc(`requests/${uid}_${requestId}`)
     const request = await tx.get(requestRef)
     if (request.exists) return request.data().result
     const products = await readCatalog(tx, db)
+    const settings = await readSettings(db, tx)
     const { items, subtotal } = priceCart(products, data?.lines)
     const discount = applyDiscount(subtotal, data?.discount)
     const approvedBy = approvalCheck(staff, approver, discountCheck(subtotal, discount?.amount || 0))
-    const total = subtotal - (discount?.amount || 0)
+    const priced = subtotal - (discount?.amount || 0)
+    // A sale made while the till was offline keeps the total the customer actually paid. If a price changed in
+    // the meantime, the difference is recorded on the sale (and in the activity log) for a manager to review.
+    const adjustment = offline ? priced - offline.clientTotal : 0
+    const total = priced - adjustment
     const payment = checkPayment(data?.payment, total)
     const customer = cleanCustomer(data?.customer)
     const batchesByProduct = await readBatches(tx, db, items.map((item) => item.productId))
@@ -180,26 +55,64 @@ export async function completeSale({ db, uid, now }, data) {
       const used = await tx.get(db.collection('sales').where('payment.reference', '==', payment.reference).limit(1))
       if (!used.empty) throw new RuleError('duplicate_reference', `MoMo transaction ${payment.reference} was already used for sale ${used.docs[0].data().number}. One payment can only pay for one sale.`)
     }
+    // Cash goes into the cashier's drawer. An offline sale goes into the drawer that was open when it was made.
+    let shift = null
+    let late = false
+    if (payment.method === 'cash') {
+      if (offline?.shiftId) {
+        const snap = await tx.get(db.doc(`shifts/${offline.shiftId}`))
+        if (snap.exists && snap.data().cashier?.uid === uid) {
+          shift = { ...snap.data(), id: snap.id }
+          late = shift.status !== 'open'
+        }
+      }
+      if (!shift) shift = requireShift(await readOpenShift(tx, db, uid))
+    }
 
     const deductions = takeFromBatches(batchesByProduct, items, now, products)
     const id = `S${pad(next)}`
+    const at = offline ? offline.at : now
     const sale = {
-      id, number: next, at: now, day: businessDay(now), status: 'completed',
+      id, number: next, at, day: businessDay(at), status: 'completed',
       cashier: actorRef(staff), customer, items, subtotal,
       discount: discount ? { ...discount, approvedBy } : null, total, payment,
+      tax: taxBreakdown(total, settings.tax),
+      shiftId: shift?.id || null,
+      offline: offline ? { at: offline.at, syncedAt: now, clientTotal: offline.clientTotal, adjustment } : null,
       deductions: deductions.map(({ unitCost, ...deduction }) => deduction), returns: [], void: null,
     }
     tx.set(counterRef, { value: next })
     tx.set(db.doc(`sales/${id}`), sale)
-    tx.set(db.doc(`saleCosts/${id}`), { cost: deductions.reduce((sum, deduction) => sum + deduction.quantity * deduction.unitCost, 0), day: sale.day, at: now })
+    tx.set(db.doc(`saleCosts/${id}`), { cost: deductions.reduce((sum, deduction) => sum + deduction.quantity * deduction.unitCost, 0), day: sale.day, at })
     for (const batches of batchesByProduct.values()) for (const batch of batches) if (deductions.some((deduction) => deduction.batchId === batch.id)) writeBatch(tx, db, batch)
     for (const deduction of deductions) movement(tx, db, now, staff, { productId: deduction.productId, batch: { id: deduction.batchId, lot: deduction.lot }, delta: -deduction.quantity, kind: 'sale', ref: id })
     writeStock(tx, db, batchesByProduct, availability, now)
-    audit(tx, db, now, staff, 'sale', id, `Sale ${next}: ${items.length} item${items.length === 1 ? '' : 's'}, ${payment.method}`, discount ? `Discount ${discount.reason}${approvedBy ? `, approved by ${approvedBy.name}` : ''}` : '')
-    const result = { sale }
-    tx.set(requestRef, { at: now, result })
-    return result
+    if (shift) addCash(tx, db, shift, { sale: total, late })
+    const notes = [
+      discount ? `Discount ${discount.reason}${approvedBy ? `, approved by ${approvedBy.name}` : ''}` : '',
+      offline ? `Made offline, synced later${adjustment ? `; price changed while offline, ${adjustment > 0 ? 'customer paid' : 'customer overpaid by'} ${(Math.abs(adjustment) / 100).toFixed(2)} GHS${adjustment > 0 ? ' less than today’s price' : ''}` : ''}` : '',
+      late ? 'Cash counted after the drawer was closed' : '',
+    ].filter(Boolean).join(' · ')
+    audit(tx, db, now, staff, 'sale', id, `Sale ${next}: ${items.length} item${items.length === 1 ? '' : 's'}, ${payment.method}`, notes)
+    const fresh = { sale }
+    tx.set(requestRef, { at: now, result: fresh })
+    created = true
+    return fresh
   })
+
+  if (created) await sendSaleReceipt(ctx, result.sale)
+  return result
+}
+
+// Texts the receipt to the customer when the owner turned that on and the cashier typed a phone number.
+async function sendSaleReceipt(ctx, sale) {
+  if (!sale.customer?.phone) return
+  try {
+    const settings = await readSettings(ctx.db)
+    if (!settings.sms.saleReceipt) return
+    const shop = (await ctx.db.doc('site/content').get()).data()?.shop || {}
+    await sendSms(ctx, settings, { to: sale.customer.phone, kind: 'sale_receipt', ref: sale.id, text: smsText('sale_receipt', { number: sale.number, total: sale.total, shopName: shop.legalName || 'SkinMatrix' }) })
+  } catch { /* a text never undoes a sale */ }
 }
 
 const sameDay = (sale, now) => sale.day === businessDay(now)
@@ -223,6 +136,9 @@ export async function voidSale({ db, uid, now }, data) {
     const approvedBy = approvalCheck(staff, approver, check)
     const batchesByProduct = await readBatches(tx, db, sale.items.map((item) => item.productId))
     const availability = await readAvailability(tx, db)
+    const refund = sale.total - (sale.returns || []).reduce((sum, entry) => sum + entry.amount, 0)
+    // Cash given back comes out of the drawer of whoever hands it over.
+    const shift = sale.payment.method === 'cash' && refund > 0 ? requireShift(await readOpenShift(tx, db, uid)) : null
     for (const deduction of sale.deductions) {
       const batch = batchesByProduct.get(deduction.productId)?.find((candidate) => candidate.id === deduction.batchId)
       if (!batch) throw new RuleError('batch_missing', 'A batch this sale used no longer exists. Ask the developer.')
@@ -231,7 +147,7 @@ export async function voidSale({ db, uid, now }, data) {
       movement(tx, db, now, staff, { productId: deduction.productId, batch, delta: deduction.quantity, kind: 'void', ref: sale.id, reason })
     }
     writeStock(tx, db, batchesByProduct, availability, now)
-    const refund = sale.total - (sale.returns || []).reduce((sum, entry) => sum + entry.amount, 0)
+    if (shift) addCash(tx, db, shift, { refund })
     const voided = { at: now, by: actorRef(staff), approvedBy, reason, refund, refundMethod: sale.payment.method }
     tx.update(saleRef, { status: 'voided', void: voided, deductions: [] })
     audit(tx, db, now, staff, 'void', sale.id, `Cancelled sale ${sale.number}; ${sale.deductions.reduce((sum, deduction) => sum + deduction.quantity, 0)} units back in stock`, `${reason}${approvedBy ? ` · approved by ${approvedBy.name}` : ''}`)
@@ -273,6 +189,7 @@ export async function returnItems({ db, uid, now }, data) {
     }
     const batchesByProduct = await readBatches(tx, db, lines.map((line) => line.productId))
     const availability = await readAvailability(tx, db)
+    const shift = refundMethod === 'cash' ? requireShift(await readOpenShift(tx, db, uid)) : null
     const already = (sale.returns || []).reduce((sum, entry) => sum + entry.amount, 0)
     const amount = Math.min(sale.total - already, lines.reduce((sum, line) => sum + returnValue(sale, line.productId, line.quantity), 0))
     const deductions = sale.deductions.map((deduction) => ({ ...deduction }))
@@ -288,6 +205,7 @@ export async function returnItems({ db, uid, now }, data) {
       }
     }
     if (condition === 'resaleable') writeStock(tx, db, batchesByProduct, availability, now)
+    if (shift && amount > 0) addCash(tx, db, shift, { refund: amount })
     const entry = { at: now, by: actorRef(staff), approvedBy, lines: lines.map(({ productId, quantity }) => ({ productId, quantity })), condition, amount, refundMethod, reference: reference || null, reason }
     tx.update(saleRef, { returns: [...(sale.returns || []), entry], deductions: deductions.filter((deduction) => deduction.quantity > 0) })
     audit(tx, db, now, staff, 'return', sale.id, `Return on sale ${sale.number}: ${lines.reduce((sum, line) => sum + line.quantity, 0)} unit(s), ${condition === 'resaleable' ? 'back on the shelf' : 'damaged'}`, `${reason}${approvedBy ? ` · approved by ${approvedBy.name}` : ''}`)
@@ -305,7 +223,10 @@ const WEB_FLOW = {
   cancel: { from: ['new', 'confirmed', 'ready', 'out_for_delivery'], to: 'cancelled' },
 }
 
-export async function updateWebOrder({ db, uid, now }, data) {
+const ORDER_SMS = { confirmed: 'order_confirmed', ready: 'order_ready', out_for_delivery: 'order_out_for_delivery', cancelled: 'order_cancelled' }
+
+export async function updateWebOrder(ctx, data) {
+  const { db, uid, now } = ctx
   const staff = await requireStaff(db, uid, 'webOrders')
   const orderRef = db.doc(`orders/${String(data?.orderId ?? '')}`)
   const first = await orderRef.get()
@@ -314,12 +235,12 @@ export async function updateWebOrder({ db, uid, now }, data) {
   const check = (person) => (action === 'cancel' && first.data().stockTaken?.length && !can(person.role, 'void') ? 'Cancelling a confirmed order needs a manager.' : '')
   const approver = check(staff) ? await verifyApproval(db, data?.approval, staff, check, now) : null
 
-  return db.runTransaction(async (tx) => {
+  const result = await db.runTransaction(async (tx) => {
     const order = (await tx.get(orderRef)).data()
     const payment = order.payment || {}
     if (action === 'payment_checked' || action === 'paid_offline') {
-      if (action === 'payment_checked' && payment.status !== 'reported') throw new RuleError('bad_state', 'There is no online payment to check.')
-      if (action === 'paid_offline' && !['unpaid', undefined].includes(payment.status)) throw new RuleError('bad_state', 'This order is already marked as paid.')
+      if (action === 'payment_checked' && !(payment.status === 'reported' || (payment.status === 'mismatch' && can(staff.role, 'approve')))) throw new RuleError('bad_state', 'There is no online payment to check.')
+      if (action === 'paid_offline' && !['unpaid', 'pending', undefined].includes(payment.status)) throw new RuleError('bad_state', 'This order is already marked as paid.')
       const status = action === 'payment_checked' ? 'confirmed' : 'paid_offline'
       // This is an accountable manual Paystack check, not a claim that the
       // browser verified a payment. The saved staff identity and time make the
@@ -334,6 +255,7 @@ export async function updateWebOrder({ db, uid, now }, data) {
     if (!step.from.includes(order.status)) throw new RuleError('bad_state', `This order is ${order.status.replace(/_/g, ' ')} and cannot be moved that way.`)
     if (step.to === 'out_for_delivery' && order.fulfilment?.method !== 'delivery') throw new RuleError('bad_state', 'This is a pickup order.')
     if (step.to === 'ready' && order.fulfilment?.method !== 'pickup') throw new RuleError('bad_state', 'This is a delivery order.')
+    if (action === 'confirm' && payment.status === 'pending') throw new RuleError('awaiting_payment', 'The customer has not finished paying on Paystack yet. Call them, or wait for the payment. If they will pay in cash or MoMo instead, press “Customer paid” first.')
     const approvedBy = approvalCheck(staff, approver, check)
     const reason = action === 'cancel' ? requireReason(data?.reason) : ''
     const patch = { status: step.to, updatedAt: now, updatedBy: uid }
@@ -364,8 +286,10 @@ export async function updateWebOrder({ db, uid, now }, data) {
     if (action === 'cancel') patch.cancel = { at: now, by: actorRef(staff), approvedBy, reason }
     tx.update(orderRef, patch)
     audit(tx, db, now, staff, 'web_order', order.ref, `Website order ${order.ref}: ${step.to.replace(/_/g, ' ')}`, reason)
-    return { status: step.to }
+    return { status: step.to, order }
   })
+  if (result.order && ORDER_SMS[result.status]) await notifyCustomer(ctx, result.order, ORDER_SMS[result.status])
+  return { status: result.status }
 }
 
 // ── Stock ─────────────────────────────────────────────────────────────────────────────────────

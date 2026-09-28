@@ -1,12 +1,13 @@
 // Firebase for the admin: live Firestore listeners and the Cloud Functions that make every change.
 // In development, set VITE_USE_EMULATORS=1 to use the local emulators instead of the live project.
 import { getAuth, connectAuthEmulator } from 'firebase/auth'
-import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore'
+import { connectFirestoreEmulator, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore'
 import { connectFunctionsEmulator, getFunctions, httpsCallable } from 'firebase/functions'
 import { app } from '../../cloud/firebase.js'
 
 export const auth = getAuth(app)
-export const liveDb = getFirestore(app)
+// Kept on the device too, so the till still shows products, prices and stock when the internet drops.
+export const liveDb = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) })
 export const functions = getFunctions(app, 'europe-west2')
 
 if (import.meta.env.DEV && import.meta.env.VITE_USE_EMULATORS) {

@@ -16,9 +16,14 @@ export const WEB_STATUS = {
 }
 const OPEN = ['new', 'confirmed', 'ready', 'out_for_delivery']
 
+// A Paystack order whose payment has not come through yet: the customer may still be paying, or gave up.
+export const awaitingPayment = (order) => order.payment?.method === 'paystack' && order.payment?.status === 'pending'
+// New orders staff need to act on (the badge in the menu).
+export const needsAction = (order) => order.status === 'new' && !awaitingPayment(order)
+
 function nextSteps(order) {
   switch (order.status) {
-    case 'new': return [{ action: 'confirm', label: 'I called them · Confirm' }]
+    case 'new': return awaitingPayment(order) ? [] : [{ action: 'confirm', label: 'I called them · Confirm' }]
     case 'confirmed': return order.fulfilment?.method === 'pickup' ? [{ action: 'ready', label: 'Packed · Ready for pickup' }] : [{ action: 'out_for_delivery', label: 'Sent out for delivery' }]
     case 'ready': case 'out_for_delivery': return [{ action: 'complete', label: 'Customer has it · Complete' }]
     default: return []
@@ -26,6 +31,9 @@ function nextSteps(order) {
 }
 
 function paymentText(payment) {
+  if (payment?.status === 'paid') return { tone: 'green', text: 'Paid · verified with Paystack' }
+  if (payment?.status === 'pending') return { tone: 'grey', text: 'Waiting for Paystack payment' }
+  if (payment?.status === 'mismatch') return { tone: 'red', text: 'Paystack amount is wrong' }
   if (payment?.status === 'confirmed') return { tone: 'green', text: 'Paid · Paystack check recorded' }
   if (payment?.status === 'reported') return { tone: 'amber', text: 'Paid online · check Paystack' }
   if (payment?.status === 'paid_offline') return { tone: 'green', text: 'Paid (cash or MoMo)' }
@@ -46,7 +54,10 @@ function PaymentRecord({ order }) {
     <p><b>{online ? 'Paystack online payment' : payment.method === 'pay_later' ? 'Payment on delivery / pickup' : 'Offline payment'}</b></p>
     {payment.reference ? <p className="small">Reference: <span className="mono">{payment.reference}</span></p> : null}
     <p className="small">Order total: <b>{formatGhs(order.total)}</b></p>
-    {online && !checked ? <p className="small warn-text">Awaiting a manual Paystack dashboard check before dispatch.</p> : null}
+    {payment.status === 'paid' ? <p className="small good-text">Paystack confirmed {formatGhs(payment.amountPaid)}{payment.channel ? ` by ${payment.channel.replace(/_/g, ' ')}` : ''}. No manual check needed.</p> : null}
+    {payment.status === 'mismatch' ? <p className="small bad-text">Paystack received {Number.isInteger(payment.amountPaid) ? formatGhs(payment.amountPaid) : 'a different amount'} {payment.currency}, not {formatGhs(order.total)}. Call the customer before sending anything; a manager can accept it after checking Paystack.</p> : null}
+    {payment.status === 'pending' ? <p className="small muted">The customer has not finished paying. If they gave up, call them or cancel the order.</p> : null}
+    {online && payment.status === 'reported' && !checked ? <p className="small warn-text">Awaiting a manual Paystack dashboard check before dispatch.</p> : null}
     {checked ? <p className="small good-text">Checked by {payment.checkedBy?.name || 'staff'}{payment.checkedAt ? ` · ${new Date(payment.checkedAt).toLocaleString('en-GB', { timeZone: 'Africa/Accra', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}</p> : null}
   </div>
 }
@@ -77,7 +88,7 @@ export default function WebsiteOrders() {
 
   return <div className="stack">
     <Guide id="web-orders" title="How to handle a website order" steps={[
-      'Call the customer on the number shown to check the order and the delivery address.',
+      'Call the customer on the number shown to check the order and the delivery address. Paystack payments are checked with Paystack automatically.',
       'Press Confirm. This takes the items out of shop stock. If something is out of stock you will be told before anything changes.',
       'Pack the order. For pickup press Ready for pickup; for delivery press Sent out for delivery.',
       'When the customer has it, press Complete. Mark the payment once it is checked.',
@@ -111,8 +122,8 @@ export default function WebsiteOrders() {
         {order.payment?.status === 'reported' ? <p className="small warn-text">Before you send it, open Paystack and check that reference <span className="mono">{order.payment.reference}</span> was paid {formatGhs(order.total)}.</p> : null}
         <div className="button-grid">
           {nextSteps(order).map((step) => <button key={step.action} type="button" className="btn primary" disabled={busy === order.id} onClick={() => act(order, step.action, {}, `${order.ref}: done.`)}>{step.label}</button>)}
-          {order.payment?.status === 'reported' ? <button type="button" className="btn secondary" disabled={busy === order.id} onClick={() => act(order, 'payment_checked', {}, `${order.ref}: payment checked.`)}><Icon name="check" size={16} /> I checked Paystack</button> : null}
-          {OPEN.includes(order.status) && (!order.payment || order.payment.status === 'unpaid') ? <button type="button" className="btn secondary" disabled={busy === order.id} onClick={() => act(order, 'paid_offline', {}, `${order.ref}: marked as paid.`)}><Icon name="check" size={16} /> Customer paid (cash or MoMo)</button> : null}
+          {['reported', 'mismatch'].includes(order.payment?.status) ? <button type="button" className="btn secondary" disabled={busy === order.id} onClick={() => act(order, 'payment_checked', {}, `${order.ref}: payment checked.`)}><Icon name="check" size={16} /> I checked Paystack</button> : null}
+          {OPEN.includes(order.status) && (!order.payment || ['unpaid', 'pending'].includes(order.payment.status)) ? <button type="button" className="btn secondary" disabled={busy === order.id} onClick={() => act(order, 'paid_offline', {}, `${order.ref}: marked as paid.`)}><Icon name="check" size={16} /> Customer paid (cash or MoMo)</button> : null}
           {OPEN.includes(order.status) ? <button type="button" className="btn ghost" disabled={busy === order.id} onClick={() => setCancelling(order)}>Cancel order</button> : null}
         </div>
       </Card>

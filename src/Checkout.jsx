@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Check, CircleAlert, Lock, MapPin, Minus, Plus, Store, Trash2, Truck, X } from 'lucide-react'
 import { ArrowNext, ICON, ProductVisual, useSite } from './storefront'
 import { formatGhs } from './cloud/site.js'
-import { buildOrder, cartLines, checkDetails, newOrderRef, orderTotals, PAYMENT, saveOrder } from './cloud/orders.js'
+import { cartLines, checkDetails, orderRequest, orderTotals, PAYMENT, paystackReference, placeOrder, verifyPayment } from './cloud/orders.js'
 
 // The whole checkout lives in one panel that slides in from the side. Its steps slide across inside it:
 // 0 Cart -> 1 Your details -> 2 Review and pay -> 3 Done.
@@ -40,9 +40,12 @@ export default function CheckoutDrawer() {
   const online = Boolean(checkout.paystackPublicKey)
   const [details, setDetails] = useState(readDetails)
   const [errors, setErrors] = useState({})
-  const [phase, setPhase] = useState({ kind: 'idle' }) // idle | paying | saving | failed
+  const [phase, setPhase] = useState({ kind: 'idle' }) // idle | paying | saving
   const [placed, setPlaced] = useState(null)
   const sheet = useRef(null)
+  // The same cart and details keep the same request id, so pressing Pay again never places a second order.
+  const request = useRef(null)
+  const acceptedTotal = useRef(null)
 
   const lines = useMemo(() => cartLines(cart, products), [cart, products])
   const totals = orderTotals(lines, details.method, checkout.deliveryFee)
@@ -91,36 +94,56 @@ export default function CheckoutDrawer() {
     setStep(2)
   }
 
-  const finish = async (payment, ref) => {
-    const order = buildOrder({ ref, cart, products, details, checkout, payment })
-    setPhase({ kind: 'saving' })
-    try {
-      await saveOrder(order)
-      clear()
-      setPlaced(order)
-      setPhase({ kind: 'idle' })
-      setStep(3)
-    } catch {
-      setPhase({ kind: 'failed', order, payment })
-    }
+  const currentRequest = () => {
+    const draft = orderRequest({ cart, products, details, payment: online ? PAYMENT.paystack : PAYMENT.later })
+    const key = JSON.stringify({ ...draft, requestId: '' })
+    if (request.current?.key !== key) request.current = { key, requestId: draft.requestId }
+    return { ...draft, requestId: request.current.requestId }
   }
 
+  const done = (order) => {
+    clear()
+    request.current = null
+    acceptedTotal.current = null
+    setPlaced(order)
+    setPhase({ kind: 'idle' })
+    setStep(3)
+  }
+
+  // The server prices and saves the order first; only then does the customer pay the server's total.
   const pay = async () => {
-    if (phase.kind === 'failed') return finish(phase.payment, phase.order.ref)
-    const ref = newOrderRef()
-    if (!online) return finish({ method: PAYMENT.later, status: 'unpaid', reference: null }, ref)
+    setPhase({ kind: 'saving' })
+    let order
+    try {
+      order = await placeOrder(currentRequest())
+    } catch (error) {
+      if (error.fields) { setErrors(error.fields); setStep(1) }
+      setPhase({ kind: 'idle', notice: error.message })
+      return
+    }
+    if (order.total !== totals.total && acceptedTotal.current !== order.total) {
+      acceptedTotal.current = order.total
+      setPhase({ kind: 'idle', notice: `A price changed since you added it to your cart. Your total is now ${formatGhs(order.total)}. Press the button again to continue.` })
+      return
+    }
+    if (order.payment.method === PAYMENT.later) return done(order)
     setPhase({ kind: 'paying' })
     try {
       const Paystack = await loadPaystack()
       new Paystack().newTransaction({
         key: checkout.paystackPublicKey,
-        email: details.email.trim(),
-        amount: totals.total,
+        email: order.customer.email,
+        amount: order.total,
         currency: 'GHS',
-        reference: ref,
-        metadata: { custom_fields: [{ display_name: 'Order', variable_name: 'order', value: ref }, { display_name: 'Phone', variable_name: 'phone', value: details.phone }] },
-        onSuccess: (transaction) => finish({ method: PAYMENT.paystack, status: 'reported', reference: transaction?.reference || ref }, ref),
-        onCancel: () => setPhase({ kind: 'idle', notice: 'Payment was cancelled. Your order has not been placed. You can try again.' }),
+        reference: paystackReference(order.ref),
+        metadata: { order: order.ref, custom_fields: [{ display_name: 'Order', variable_name: 'order', value: order.ref }, { display_name: 'Phone', variable_name: 'phone', value: order.customer.phone }] },
+        onSuccess: async (transaction) => {
+          setPhase({ kind: 'saving' })
+          let status = 'pending'
+          try { status = (await verifyPayment(order.ref, transaction?.reference)).status } catch { status = 'pending' }
+          done({ ...order, payment: { ...order.payment, status } })
+        },
+        onCancel: () => setPhase({ kind: 'idle', notice: `Payment was cancelled. Your order ${order.ref} is saved but not paid. Press Pay to try again.` }),
         onError: () => setPhase({ kind: 'idle', notice: 'Paystack could not start the payment. Please try again.' }),
       })
     } catch {
@@ -230,13 +253,10 @@ export default function CheckoutDrawer() {
               </dl>
               {totals.deliveryFee === null && details.method === 'delivery' ? <p className="drawer-note">You pay the delivery fee when your order arrives.</p> : null}
               {phase.notice ? <p className="checkout-error" role="alert"><CircleAlert {...ICON} /> {phase.notice}</p> : null}
-              {phase.kind === 'failed' ? <p className="checkout-error" role="alert"><CircleAlert {...ICON} /> {phase.payment.status === 'reported'
-                ? `Your payment went through (reference ${phase.payment.reference}), but we could not save your order. Press the button again. If it still fails, contact us with this reference.`
-                : 'We could not send your order. Check your internet and press the button again.'}</p> : null}
             </div>
             <div className="drawer-foot">
               <button className="button dark drawer-cta" onClick={pay} disabled={busy || !lines.length} tabIndex={tab(2)}>
-                {busy ? (phase.kind === 'paying' ? 'Opening Paystack…' : 'Sending your order…') : phase.kind === 'failed' ? 'Try again' : online ? <><Lock {...ICON} /> Pay {formatGhs(totals.total)}</> : <>Place order <ArrowNext /></>}
+                {busy ? (phase.kind === 'paying' ? 'Waiting for Paystack…' : 'Sending your order…') : online ? <><Lock {...ICON} /> Pay {formatGhs(totals.total)}</> : <>Place order <ArrowNext /></>}
               </button>
               <p className="drawer-note">{online ? 'You pay safely with Paystack (card or mobile money).' : 'Online payment is not ready yet. We call you to arrange payment.'} By ordering you agree to our <a href="/terms" target="_blank" rel="noreferrer">terms</a>.</p>
             </div>
@@ -249,11 +269,13 @@ export default function CheckoutDrawer() {
                 <span className="done-icon"><Check {...ICON} /></span>
                 <h2 tabIndex={-1}>Thank you, {placed.customer.name.split(' ')[0]}.</h2>
                 <p className="done-ref">Your order number is <b>{placed.ref}</b>.</p>
-                <p>{placed.payment.status === 'reported' ? `We have your payment of ${formatGhs(placed.total)}.` : `Total: ${formatGhs(placed.total)}. You have not paid yet.`}</p>
+                <p>{placed.payment.status === 'paid' ? `We have your payment of ${formatGhs(placed.total)}.`
+                  : placed.payment.method === PAYMENT.paystack ? `Total: ${formatGhs(placed.total)}. We are confirming your payment with Paystack and will call you.`
+                    : `Total: ${formatGhs(placed.total)}. You have not paid yet.`}</p>
                 <h3 className="drawer-subhead">What happens next</h3>
                 <ol className="done-steps">
                   <li>We call you on <b>{placed.customer.phone}</b> to confirm.</li>
-                  {placed.payment.status === 'reported' ? null : <li>We tell you how to pay.</li>}
+                  {placed.payment.method === PAYMENT.paystack ? null : <li>We tell you how to pay.</li>}
                   <li>{placed.fulfilment.method === 'delivery' ? `We deliver to: ${placed.fulfilment.address}.` : 'You pick up your order at our shop.'}</li>
                 </ol>
               </> : <h2 tabIndex={-1}>Thank you.</h2>}

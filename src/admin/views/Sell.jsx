@@ -4,6 +4,9 @@ import { formatMoney, parseCedis } from '../lib/money.js'
 import { DISCOUNT_LIMIT, MOMO_NETWORKS } from '../../../functions/src/core/rules.js'
 import { expiryStatus, sellableFromSummary } from '../../../functions/src/core/stock.js'
 import { discountNeedsApproval } from '../../../functions/src/core/sale.js'
+import { taxBreakdown } from '../../../functions/src/core/tax.js'
+import { isConnectionProblem } from '../live/offlineSales.js'
+import { OfflineSales } from '../components/offline.jsx'
 import { Dialog, Icon, Money, Segmented } from '../components/ui.jsx'
 import { Guide } from '../components/guide.jsx'
 import { beep, CameraScanner, useHardwareScanner } from '../components/scanner.jsx'
@@ -14,7 +17,7 @@ const newId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.r
 const EMPTY_PAY = { method: 'cash', received: '', reference: '', network: 'MTN' }
 
 export default function Sell() {
-  const { products, catalogLoaded, call, toast, role, shop, online } = useOps()
+  const { products, catalogLoaded, call, toast, role, shop, online, me, settings, offlineSales, queueSale } = useOps()
   const now = useNow(60000)
   const [query, setQuery] = useState('')
   const [cart, setCart] = useState([])
@@ -29,7 +32,14 @@ export default function Sell() {
   const requestId = useRef(newId())
   const searchRef = useRef(null)
 
-  const available = useCallback((product) => sellableFromSummary(product.stock, now), [now])
+  // Units already sold offline on this till are not in the server's stock count yet.
+  const queued = useMemo(() => {
+    const map = new Map()
+    for (const entry of offlineSales) for (const line of entry.lines) map.set(line.productId, (map.get(line.productId) || 0) + line.quantity)
+    return map
+  }, [offlineSales])
+  const onShelf = useCallback((product, at) => sellableFromSummary(product.stock, at) - (queued.get(product.id) || 0), [queued])
+  const available = useCallback((product) => onShelf(product, now), [now, onShelf])
   const byCode = useMemo(() => {
     const map = new Map()
     for (const product of products) {
@@ -42,14 +52,14 @@ export default function Sell() {
 
   const add = useCallback((product, silent = false) => {
     if (!product.price) { beep(false); toast(`${product.name} has no price yet. The owner can add it in Website → Products.`, 'error'); return }
-    const left = sellableFromSummary(product.stock, Date.now()) - (cart.find((line) => line.productId === product.id)?.quantity || 0)
+    const left = onShelf(product, Date.now()) - (cart.find((line) => line.productId === product.id)?.quantity || 0)
     if (left <= 0) { beep(false); toast(`No more ${product.name} in stock.`, 'error'); return }
     if (!silent) beep()
     requestId.current = newId()
     setCart((list) => (list.some((line) => line.productId === product.id)
       ? list.map((line) => (line.productId === product.id ? { ...line, quantity: line.quantity + 1 } : line))
       : [...list, { productId: product.id, quantity: 1 }]))
-  }, [cart, toast])
+  }, [cart, toast, onShelf])
 
   const scan = useCallback((raw) => {
     const code = String(raw).trim().toUpperCase()
@@ -65,7 +75,7 @@ export default function Sell() {
     setCart((list) => list.map((line) => {
       if (line.productId !== productId) return line
       const product = products.find((candidate) => candidate.id === productId)
-      return { ...line, quantity: Math.max(0, Math.min(line.quantity + delta, sellableFromSummary(product?.stock, Date.now()))) }
+      return { ...line, quantity: Math.max(0, Math.min(line.quantity + delta, product ? onShelf(product, Date.now()) : 0)) }
     }).filter((line) => line.quantity > 0))
   }
 
@@ -83,27 +93,61 @@ export default function Sell() {
   const needsApproval = discountNeedsApproval(role, subtotal, discountAmount)
   const units = lines.reduce((sum, line) => sum + line.quantity, 0)
 
-  const ready = lines.length > 0 && online && !busy
+  const drawerMissing = pay.method === 'cash' && !me.openShiftId
+  const ready = lines.length > 0 && !busy && !drawerMissing
+    && (online || !needsApproval)
     && (!discountAmount || discount.reason.trim().length >= 3)
     && received !== null && received >= total
     && (pay.method !== 'momo' || /^[A-Za-z0-9.-]{6,30}$/.test(pay.reference.trim()))
 
+  const salePayload = () => ({
+    requestId: requestId.current,
+    lines: lines.map(({ productId, quantity }) => ({ productId, quantity })),
+    discount: discountAmount ? { type: discount.type, value: discountValue, reason: discount.reason } : null,
+    payment: { method: pay.method, received, reference: pay.reference, network: pay.network },
+    customer: customer.name || customer.phone ? { name: customer.name, phone: customer.phone } : null,
+  })
+
+  const finished = (sale) => {
+    setDone(sale)
+    setCheckout(false)
+    if (autoPrint) printNow()
+  }
+
+  // No internet: the sale is kept on this till and sent later with the same request id (see LiveProvider).
+  const saveOffline = (payload) => {
+    const at = Date.now()
+    const localNumber = `${me.name.slice(0, 1).toUpperCase()}-${String(at).slice(-5)}`
+    if (!queueSale({ ...payload, at, shiftId: me.openShiftId || null, clientTotal: total, localNumber })) {
+      toast('This device cannot keep offline sales (storage is blocked or full). Wait for the internet to come back.', 'error')
+      return
+    }
+    const byId = new Map(lines.map((line) => [line.productId, line.product]))
+    finished({
+      provisional: true, number: localNumber, at, status: 'completed', cashier: { uid: me.uid, name: me.name },
+      customer: payload.customer, subtotal, total, returns: [],
+      items: payload.lines.map((line) => { const product = byId.get(line.productId); return { productId: line.productId, name: product.name, size: product.size || '', unitPrice: product.price, quantity: line.quantity, lineTotal: product.price * line.quantity } }),
+      discount: discountAmount ? { amount: discountAmount, reason: discount.reason } : null,
+      payment: { method: pay.method, received, change: received - total, network: pay.method === 'momo' ? pay.network : null, reference: pay.reference.trim().toUpperCase() || null },
+      tax: taxBreakdown(total, settings.tax),
+    })
+  }
+
   const complete = async (event) => {
     event?.preventDefault()
     if (!ready) return
+    const payload = salePayload()
+    if (!online) { saveOffline(payload); return }
     setBusy(true)
-    const result = await call('completeSale', {
-      requestId: requestId.current,
-      lines: lines.map(({ productId, quantity }) => ({ productId, quantity })),
-      discount: discountAmount ? { type: discount.type, value: discountValue, reason: discount.reason } : null,
-      payment: { method: pay.method, received, reference: pay.reference, network: pay.network },
-      customer: customer.name || customer.phone ? { name: customer.name, phone: customer.phone } : null,
-    })
-    setBusy(false)
-    if (!result) return
-    setDone(result.sale)
-    setCheckout(false)
-    if (autoPrint) printNow()
+    try {
+      const result = await call('completeSale', payload, { quiet: true })
+      if (result) finished(result.sale)
+    } catch (error) {
+      if (isConnectionProblem(error.code) && !needsApproval) saveOffline(payload)
+      else toast(error.message, 'error')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const newSale = () => {
@@ -120,14 +164,14 @@ export default function Sell() {
   if (done) return <div className="sale-done">
     <div className="sale-done-head">
       <Icon name="check" size={28} />
-      <div><h2>Sale {done.number} complete</h2><p className="muted">{done.payment.change ? <>Give <b>{formatMoney(done.payment.change)}</b> change.</> : 'No change to give.'}</p></div>
+      <div><h2>{done.provisional ? 'Offline sale saved' : `Sale ${done.number} complete`}</h2><p className="muted">{done.payment.change ? <>Give <b>{formatMoney(done.payment.change)}</b> change.</> : 'No change to give.'}</p></div>
     </div>
     <Receipt sale={done} shop={shop} />
     <PrintArea><Receipt sale={done} shop={shop} /></PrintArea>
     <div className="sale-done-actions">
       <button type="button" className="btn primary large" autoFocus onClick={newSale}>New sale</button>
       <button type="button" className="btn secondary" onClick={printNow}><Icon name="printer" size={16} /> Print receipt</button>
-      <a className="btn secondary" href={whatsappReceiptLink(done, shop)} target="_blank" rel="noreferrer"><Icon name="whatsapp" size={16} /> Send on WhatsApp</a>
+      {done.provisional ? null : <a className="btn secondary" href={whatsappReceiptLink(done, shop)} target="_blank" rel="noreferrer"><Icon name="whatsapp" size={16} /> Send on WhatsApp</a>}
       <label className="check"><input type="checkbox" checked={autoPrint} onChange={(event) => { setAutoPrint(event.target.checked); setAutoPrintState(event.target.checked) }} /> Print automatically after each sale</label>
     </div>
   </div>
@@ -185,7 +229,8 @@ export default function Sell() {
       </> : null}
       {pay.method === 'card' ? <label className="field"><span>Card slip number <em>optional</em></span><input autoComplete="off" value={pay.reference} onChange={(event) => setPay({ ...pay, reference: event.target.value })} /></label> : null}
 
-      {!online ? <p className="bad-text small">No internet. Sales can't be saved until the connection is back.</p> : null}
+      {drawerMissing ? <p className="callout warn small">Open your cash drawer before taking cash. <a href="#/drawer">Open drawer</a> · or choose MoMo or Card.</p> : null}
+      {!online ? <p className="warn-text small">{needsApproval ? 'No internet: a discount that needs approval has to wait until the connection is back.' : 'No internet: this sale is kept on this till and sent when the connection is back.'}</p> : null}
       <button type="submit" className="btn primary block large" disabled={!ready}>{busy ? 'Saving…' : `Finish sale · ${formatMoney(total)}`}</button>
     </> : null}
   </form>
@@ -194,9 +239,10 @@ export default function Sell() {
     <Guide id="sell" title="POS · how to make a sale" steps={[
       'Scan the barcode (with the scanner or the camera button), or tap the product.',
       'Change the number with − and +. Add a discount or the customer’s name if needed.',
-      'Choose Cash, MoMo or Card, type what you received, then press Finish sale.',
+      'Choose Cash, MoMo or Card, type what you received, then press Finish sale. Cash needs your drawer open (Cash drawer).',
       'Print the receipt or send it on WhatsApp. Press New sale for the next customer.',
     ]} />
+    <OfflineSales />
     <div className="sell-grid">
       <section className="sell-products" aria-label="Products">
         <div className="sell-search">

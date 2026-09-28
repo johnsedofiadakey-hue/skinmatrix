@@ -5,7 +5,7 @@ import { expiryStatus, sellable, sellableFromSummary, stockLevel } from '../../.
 import { Card, Icon, Money, Stat } from '../components/ui.jsx'
 import { fmtTime } from '../components/format.js'
 import { dayTotals, useSalesForDay } from './Sales.jsx'
-import { useWebOrders } from './WebsiteOrders.jsx'
+import { needsAction, useWebOrders } from './WebsiteOrders.jsx'
 
 const hello = (ms) => {
   const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Accra', hour: 'numeric', hour12: false }).format(ms))
@@ -13,19 +13,22 @@ const hello = (ms) => {
 }
 
 export default function Home() {
-  const { me, can, products, staffList } = useOps()
+  const { me, can, products, staffList, offlineSales } = useOps()
   const now = useNow(60000)
   const sales = useSalesForDay(businessDay(now))
   const orders = useWebOrders()
   const totals = dayTotals(sales || [])
   const openOrders = (orders || []).filter((order) => ['new', 'confirmed', 'ready', 'out_for_delivery'].includes(order.status))
-  const newOrders = openOrders.filter((order) => order.status === 'new').length
+  const newOrders = openOrders.filter(needsAction).length
   const low = products.filter((product) => stockLevel(sellableFromSummary(product.stock, now), product.setup.reorderPoint ?? 3) !== 'ok')
   const expired = products.filter((product) => (product.stock?.batches || []).some((batch) => batch.quantity > 0 && !sellable(batch, now)))
   const expiringSoon = products.filter((product) => expiryStatus(product.stock?.nextExpiry, now) === 'urgent')
   const mine = (sales || []).filter((sale) => sale.cashier?.uid === me.uid && sale.status !== 'voided')
 
+  const offlineProblems = offlineSales.filter((entry) => entry.status === 'problem').length
   const todo = [
+    offlineProblems ? { href: '#/sell', tone: 'bad', text: `${offlineProblems} offline sale(s) were not accepted by the server. Open POS to fix them.` } : null,
+    can('sell') && !me.openShiftId ? { href: '#/drawer', tone: 'warn', text: 'Open your cash drawer before taking cash' } : null,
     newOrders ? { href: '#/orders', tone: 'bad', text: `${newOrders} new website order${newOrders === 1 ? '' : 's'} to call and confirm` } : null,
     can('approve') && !me.hasPin ? { href: '#/account', tone: 'warn', text: 'Set your approval PIN so you can approve refunds at the till' } : null,
     can('stock') && expired.length ? { href: '#/stock', tone: 'bad', text: `${expired.length} product(s) have expired items on the shelf. Remove and write them off.` } : null,
@@ -43,7 +46,7 @@ export default function Home() {
     <div className="quick-actions">
       <a className="quick primary" href="#/sell"><Icon name="pos" size={22} /><span>New sale</span></a>
       <a className="quick" href="#/orders"><Icon name="cart" size={22} /><span>Website orders{openOrders.length ? ` (${openOrders.length})` : ''}</span></a>
-      <a className="quick" href="#/sales"><Icon name="sale" size={22} /><span>Sales & refunds</span></a>
+      <a className="quick" href="#/drawer"><Icon name="drawer" size={22} /><span>{me.openShiftId ? 'Cash drawer' : 'Open drawer'}</span></a>
       <a className="quick" href={can('deliveries') ? '#/stock/receive' : '#/stock'}><Icon name="inventory" size={22} /><span>{can('deliveries') ? 'Receive stock' : 'Check stock'}</span></a>
     </div>
     <div className="stat-grid">

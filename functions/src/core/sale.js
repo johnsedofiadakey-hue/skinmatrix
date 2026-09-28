@@ -104,3 +104,16 @@ export function isValidBarcode(code) {
   }
   return /^[A-Za-z0-9-]{4,32}$/.test(text)
 }
+
+// A sale made while the till had no internet, sent when it is back. offline: { at, shiftId, clientTotal }.
+// `at` is when the sale was really made; it must be within the last 7 days.
+export const OFFLINE_MAX_AGE = 7 * 24 * 60 * 60 * 1000
+export function checkOffline(offline, now) {
+  if (!offline) return null
+  const at = offline.at
+  if (!Number.isSafeInteger(at) || at < now - OFFLINE_MAX_AGE || at > now + 5 * 60 * 1000) throw new RuleError('offline_too_old', 'This offline sale is more than 7 days old or has a wrong time. A manager must record it by hand.')
+  if (!Number.isSafeInteger(offline.clientTotal) || offline.clientTotal <= 0) throw new RuleError('bad_offline', 'This offline sale has no total. A manager must record it by hand.')
+  const shiftId = offline.shiftId ? String(offline.shiftId) : null
+  if (shiftId && !/^[A-Za-z0-9]{10,40}$/.test(shiftId)) throw new RuleError('bad_offline', 'This offline sale is damaged. A manager must record it by hand.')
+  return { at, shiftId, clientTotal: offline.clientTotal }
+}

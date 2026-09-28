@@ -2,6 +2,7 @@ import { createPortal } from 'react-dom'
 import { formatMoney } from '../lib/money.js'
 import { fmtFull } from './format.js'
 import { refundedAmount } from '../../../functions/src/core/sale.js'
+import { percentLabel } from '../../../functions/src/core/tax.js'
 
 const PAID_BY = { cash: 'Cash', momo: 'Mobile money', card: 'Card' }
 const AUTO_PRINT_KEY = 'skinmatrix-auto-print'
@@ -17,10 +18,12 @@ export function Receipt({ sale, shop, productName }) {
       <b className="receipt-shop">{shop?.legalName || 'SkinMatrix'}</b>
       {shop?.address ? <span>{shop.address}</span> : null}
       {shop?.phone ? <span>Tel {shop.phone}</span> : null}
+      {sale.tax ? <span>TIN {sale.tax.tin}</span> : null}
     </div>
     {sale.status === 'voided' ? <p className="receipt-void">CANCELLED</p> : null}
+    {sale.provisional ? <p className="receipt-void">OFFLINE SALE<small className="block">Saved on this till. It gets its final number when the internet is back.</small></p> : null}
     <div className="receipt-meta">
-      <span>Receipt no. {sale.number}</span>
+      <span>{sale.provisional ? 'Offline no.' : 'Receipt no.'} {sale.number}</span>
       <span>{fmtFull(sale.at)}</span>
       <span>Served by {sale.cashier?.name}</span>
       {sale.customer?.name ? <span>Customer: {sale.customer.name}</span> : null}
@@ -32,16 +35,22 @@ export function Receipt({ sale, shop, productName }) {
       </tr>)}
     </tbody></table>
     <div className="receipt-totals">
-      {sale.discount ? <>
-        <div><span>Subtotal</span><span>{formatMoney(sale.subtotal)}</span></div>
-        <div><span>Discount</span><span>−{formatMoney(sale.discount.amount)}</span></div>
-      </> : null}
+      {sale.discount || sale.offline?.adjustment ? <div><span>Subtotal</span><span>{formatMoney(sale.subtotal)}</span></div> : null}
+      {sale.discount ? <div><span>Discount</span><span>−{formatMoney(sale.discount.amount)}</span></div> : null}
+      {sale.offline?.adjustment ? <div><span>Price at time of sale</span><span>{sale.offline.adjustment > 0 ? '−' : '+'}{formatMoney(Math.abs(sale.offline.adjustment))}</span></div> : null}
       <div className="receipt-total"><span>TOTAL</span><span>{formatMoney(sale.total)}</span></div>
       <div><span>Paid by {PAID_BY[sale.payment.method]}{sale.payment.network ? ` (${sale.payment.network})` : ''}</span><span>{formatMoney(sale.payment.received)}</span></div>
       {sale.payment.change ? <div><span>Change</span><span>{formatMoney(sale.payment.change)}</span></div> : null}
       {sale.payment.reference ? <div><span>Ref</span><span>{sale.payment.reference}</span></div> : null}
       {refunded ? <div><span>Refunded</span><span>−{formatMoney(refunded)}</span></div> : null}
     </div>
+    {sale.tax ? <div className="receipt-totals receipt-tax">
+      <div><span>Prices include taxes:</span><span /></div>
+      <div><span>Value before tax</span><span>{formatMoney(sale.tax.net)}</span></div>
+      <div><span>VAT {percentLabel(sale.tax.vatBp)}</span><span>{formatMoney(sale.tax.vat)}</span></div>
+      <div><span>NHIL {percentLabel(sale.tax.nhilBp)}</span><span>{formatMoney(sale.tax.nhil)}</span></div>
+      <div><span>GETFund {percentLabel(sale.tax.getfundBp)}</span><span>{formatMoney(sale.tax.getfund)}</span></div>
+    </div> : null}
     <p className="receipt-foot">
       {shop?.returnDays ? <>Keep this receipt. Unopened items can be returned within {shop.returnDays} days.<br /></> : null}
       Thank you for shopping with us.
@@ -54,11 +63,13 @@ export function receiptText(sale, shop) {
   const lines = [
     `*${shop?.legalName || 'SkinMatrix'}* — Receipt ${sale.number}`,
     fmtFull(sale.at),
+    sale.tax ? `TIN ${sale.tax.tin}` : null,
     '',
     ...sale.items.map((item) => `${item.quantity} × ${item.name}${item.size ? ` ${item.size}` : ''}  ${formatMoney(item.lineTotal)}`),
     '',
     sale.discount ? `Discount: −${formatMoney(sale.discount.amount)}` : null,
     `*Total: ${formatMoney(sale.total)}*`,
+    sale.tax ? `Includes VAT ${formatMoney(sale.tax.vat)}, NHIL ${formatMoney(sale.tax.nhil)}, GETFund ${formatMoney(sale.tax.getfund)}` : null,
     `Paid by ${PAID_BY[sale.payment.method]}`,
     '',
     'Thank you for shopping with SkinMatrix.',

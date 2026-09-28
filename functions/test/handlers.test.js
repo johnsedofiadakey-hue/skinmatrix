@@ -4,7 +4,11 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { initializeApp } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
 import { getFirestore } from 'firebase-admin/firestore'
+import { createHmac } from 'node:crypto'
 import * as h from '../src/handlers.js'
+import * as shifts from '../src/shifts.js'
+import * as settings from '../src/settings.js'
+import * as web from '../src/web.js'
 
 const PROJECT = 'demo-skinmatrix'
 const DAY = 24 * 60 * 60 * 1000
@@ -42,6 +46,7 @@ beforeEach(async () => {
   }
   await h.setMyPin(ctx(MANAGER), { pin: '5000' })
   await h.setMyPin(ctx(OWNER), { pin: '9000' })
+  for (const uid of [OWNER, MANAGER, STAFF]) await shifts.openShift(ctx(uid), { float: 10000 })
   await h.receiveDelivery(ctx(MANAGER), { lines: [
     { productId: 'serum', lot: 'OLD1', expiresOn: '2026-10-20', quantity: 3, unitCost: 9000 },
     { productId: 'serum', lot: 'NEW1', expiresOn: '2027-12-31', quantity: 10, unitCost: 9500 },
@@ -221,5 +226,156 @@ describe('staff accounts', () => {
     await db.doc(`staff/${OWNER}`).update({ role: 'manager' })
     await h.claimOwner(ctx('editor1'))
     expect((await db.doc('staff/editor1').get()).data().role).toBe('owner')
+  })
+})
+
+const shiftOf = async (uid) => {
+  const id = (await db.doc(`staff/${uid}`).get()).data().openShiftId
+  return id ? { id, ...(await db.doc(`shifts/${id}`).get()).data() } : null
+}
+
+describe('cash drawers', () => {
+  it('adds cash sales, takes off cash refunds and ignores MoMo', async () => {
+    const { sale } = await sell(STAFF, [{ productId: 'cream', quantity: 1 }], { payment: { method: 'cash', received: 50000 } })
+    await sell(STAFF, [{ productId: 'cream', quantity: 1 }], { payment: { method: 'momo', received: 30000, reference: 'MM1234567', network: 'MTN' } })
+    expect(sale.shiftId).toBe((await shiftOf(STAFF)).id)
+    await h.returnItems(ctx(MANAGER), { saleId: sale.id, lines: [{ productId: 'cream', quantity: 1 }], condition: 'resaleable', refundMethod: 'cash', reason: 'Changed mind' })
+    expect(await shiftOf(STAFF)).toMatchObject({ float: 10000, cashSales: 30000, cashRefunds: 0, sales: 1 })
+    expect((await shiftOf(MANAGER)).cashRefunds).toBe(30000)
+  })
+
+  it('refuses cash without an open drawer but still takes MoMo', async () => {
+    await shifts.closeShift(ctx(STAFF), { counted: 10000 })
+    await expectRule(sell(STAFF, [{ productId: 'cream', quantity: 1 }]), 'no_shift')
+    await sell(STAFF, [{ productId: 'cream', quantity: 1 }], { payment: { method: 'momo', received: 30000, reference: 'MM7654321', network: 'MTN' } })
+    await expectRule(shifts.closeShift(ctx(STAFF), { counted: 0 }), 'no_shift')
+  })
+
+  it('needs a manager to take cash out, and a note when the count is different', async () => {
+    await sell(STAFF, [{ productId: 'cream', quantity: 1 }], { payment: { method: 'cash', received: 30000 } })
+    await expectRule(shifts.cashMovement(ctx(STAFF), { kind: 'out', amount: 5000, reason: 'Paid the rider' }), 'approval_required')
+    await shifts.cashMovement(ctx(STAFF), { kind: 'out', amount: 5000, reason: 'Paid the rider', approval: { approverId: MANAGER, pin: '5000' } })
+    await shifts.cashMovement(ctx(STAFF), { kind: 'in', amount: 2000, reason: 'Change from the bank' })
+    await expectRule(shifts.cashMovement(ctx(MANAGER), { kind: 'out', amount: 999999, reason: 'Too much' }), 'not_enough_cash')
+    // 100 float + 300 sale − 50 out + 20 in = 370 GHS expected
+    await expectRule(shifts.closeShift(ctx(STAFF), { counted: 36000 }), 'reason_required')
+    const { shift } = await shifts.closeShift(ctx(STAFF), { counted: 36000, note: 'Gave wrong change' })
+    expect(shift).toMatchObject({ status: 'closed', expected: 37000, difference: -1000 })
+    expect((await db.doc(`staff/${STAFF}`).get()).data().openShiftId).toBeNull()
+  })
+
+  it('lets a manager close a drawer someone left open', async () => {
+    const left = await shiftOf(STAFF)
+    await expectRule(shifts.closeShift(ctx(OWNER), { shiftId: 'nope-000000' , counted: 0 }), 'not_found')
+    await expectRule(shifts.closeShift({ ...ctx(STAFF) }, { shiftId: (await shiftOf(MANAGER)).id, counted: 10000 }), 'forbidden')
+    await shifts.closeShift(ctx(MANAGER), { shiftId: left.id, counted: 10000 })
+    expect(await shiftOf(STAFF)).toBeNull()
+  })
+})
+
+describe('offline sales and taxes', () => {
+  it('keeps the time and price of an offline sale and records any price change', async () => {
+    const shiftId = (await shiftOf(STAFF)).id
+    const at = NOW - 60 * 60 * 1000
+    const { sale } = await sell(STAFF, [{ productId: 'cream', quantity: 1 }], { payment: { method: 'cash', received: 28000 }, offline: { at, shiftId, clientTotal: 28000 } })
+    expect(sale).toMatchObject({ at, total: 28000, subtotal: 30000, offline: { clientTotal: 28000, adjustment: 2000 } })
+    expect((await shiftOf(STAFF)).cashSales).toBe(28000)
+    await shifts.closeShift(ctx(STAFF), { counted: 38000 })
+    // Synced after the drawer closed: counted as late cash on that drawer, not lost.
+    await sell(STAFF, [{ productId: 'cream', quantity: 1 }], { payment: { method: 'cash', received: 30000 }, offline: { at, shiftId, clientTotal: 30000 } })
+    expect((await db.doc(`shifts/${shiftId}`).get()).data().lateCash).toBe(30000)
+    await expectRule(sell(STAFF, [{ productId: 'cream', quantity: 1 }], { offline: { at: NOW - 8 * DAY, shiftId, clientTotal: 30000 } }), 'offline_too_old')
+  })
+
+  it('splits VAT, NHIL and GETFund out of the total when the shop is registered', async () => {
+    await expectRule(settings.saveShopSettings(ctx(MANAGER), { tax: { registered: true, tin: 'P0012345678' } }), 'forbidden')
+    await expectRule(settings.saveShopSettings(ctx(OWNER), { tax: { registered: true, tin: 'x' } }), 'bad_tin')
+    await settings.saveShopSettings(ctx(OWNER), { tax: { registered: true, tin: 'P0012345678', vatBp: 1500, nhilBp: 250, getfundBp: 250 } })
+    const { sale } = await sell(STAFF, [{ productId: 'cream', quantity: 1 }])
+    expect(sale.tax).toMatchObject({ tin: 'P0012345678', net: 25000, nhil: 625, getfund: 625, vat: 3750 })
+    expect(sale.tax.net + sale.tax.vat + sale.tax.nhil + sale.tax.getfund).toBe(sale.total)
+  })
+})
+
+describe('website checkout on the server', () => {
+  const details = { name: 'Esi Mensah', phone: '0241234567', email: 'esi@test.dev', method: 'delivery', address: 'East Legon, near the mall', notes: '' }
+  const place = (extra = {}, now = NOW) => web.placeWebOrder({ db, now, secrets: {} }, { requestId: rid(), payment: 'pay_later', details, lines: [{ id: 'cream', qty: 2, price: 1 }], ...extra })
+  const content = (checkout) => db.doc('site/content').set({ shop: { legalName: 'SkinMatrix Ltd', phone: '030 000 0000' }, home: {}, checkout: { deliveryFee: 2000, pickup: true, paystackPublicKey: '', ...checkout }, terms: {} })
+
+  it('prices the order from the catalogue, not the browser', async () => {
+    await content({})
+    const order = await place()
+    expect(order).toMatchObject({ status: 'new', subtotal: 60000, deliveryFee: 2000, total: 62000, payment: { method: 'pay_later', status: 'unpaid' } })
+    expect(order.lines[0]).toMatchObject({ id: 'cream', price: 30000, qty: 2 })
+    expect(order.customer.phone).toBe('024 123 4567')
+    const saved = (await db.doc(`orders/${order.ref}`).get()).data()
+    expect(saved.total).toBe(62000)
+    expect(saved.createdAt.toMillis()).toBe(NOW)
+  })
+
+  it('refuses hidden, unpriced and out-of-stock products and bad details', async () => {
+    await content({})
+    await expectRule(place({ lines: [{ id: 'pouch', qty: 1 }] }), 'unknown_product')
+    await db.doc('site/availability').update({ 'products.cream': false })
+    await expectRule(place(), 'out_of_stock')
+    await expectRule(place({ lines: [{ id: 'serum', qty: 1 }], details: { ...details, phone: '12' } }), 'bad_details')
+    await expectRule(place({ lines: [{ id: 'serum', qty: 1 }], payment: 'paystack' }), 'bad_payment')
+  })
+
+  it('is idempotent per request', async () => {
+    await content({})
+    const requestId = rid()
+    const args = { requestId, payment: 'pay_later', details, lines: [{ id: 'serum', qty: 1 }] }
+    const first = await web.placeWebOrder({ db, now: NOW, secrets: {} }, args)
+    const again = await web.placeWebOrder({ db, now: NOW, secrets: {} }, args)
+    expect(again.ref).toBe(first.ref)
+  })
+
+  it('confirms a Paystack payment with Paystack and refuses a wrong amount', async () => {
+    await content({ paystackPublicKey: 'pk_test_abc' })
+    const order = await place({ payment: 'paystack' })
+    expect(order.payment.status).toBe('pending')
+    await expectRule(h.updateWebOrder(ctx(STAFF), { orderId: order.ref, action: 'confirm' }), 'awaiting_payment')
+    const paystack = (amount) => async (url, init) => {
+      expect(url).toContain(`${order.ref}-A1`)
+      expect(init.headers.Authorization).toBe('Bearer sk_test_secret')
+      return { ok: true, json: async () => ({ data: { status: 'success', reference: `${order.ref}-A1`, amount, currency: 'GHS', channel: 'mobile_money', paid_at: '2026-09-26T12:00:00Z' } }) }
+    }
+    const verify = (amount) => web.verifyWebPayment({ db, now: NOW, secrets: { paystack: 'sk_test_secret' }, fetch: paystack(amount) }, { ref: order.ref, reference: `${order.ref}-A1` })
+    await expectRule(web.verifyWebPayment({ db, now: NOW, secrets: {} }, { ref: order.ref, reference: 'SM-ZZZZZZ-A1' }), 'bad_reference')
+    expect((await verify(100)).status).toBe('mismatch')
+    await db.doc(`orders/${order.ref}`).update({ 'payment.status': 'pending' })
+    expect((await verify(62000)).status).toBe('paid')
+    expect((await db.doc(`orders/${order.ref}`).get()).data().payment).toMatchObject({ status: 'paid', amountPaid: 62000, verifiedBy: 'verify', channel: 'mobile_money' })
+    await h.updateWebOrder(ctx(STAFF), { orderId: order.ref, action: 'confirm' })
+  })
+
+  it('accepts only webhooks signed with the Paystack secret', async () => {
+    await content({ paystackPublicKey: 'pk_test_abc' })
+    const order = await place({ payment: 'paystack' })
+    const body = Buffer.from(JSON.stringify({ event: 'charge.success', data: { status: 'success', reference: `${order.ref}-B2`, amount: 62000, currency: 'GHS' } }))
+    const hook = (signature) => web.handlePaystackWebhook({ db, now: NOW, secrets: { paystack: 'sk_test_secret' } }, { rawBody: body, signature })
+    expect(await hook('forged')).toBe(401)
+    expect((await db.doc(`orders/${order.ref}`).get()).data().payment.status).toBe('pending')
+    expect(await hook(createHmac('sha512', 'sk_test_secret').update(body).digest('hex'))).toBe(200)
+    expect((await db.doc(`orders/${order.ref}`).get()).data().payment).toMatchObject({ status: 'paid', verifiedBy: 'webhook' })
+  })
+
+  it('texts the customer when SMS is on, and never fails the order when the provider is down', async () => {
+    await content({})
+    await settings.saveShopSettings(ctx(OWNER), { sms: { enabled: true, senderId: 'SkinMatrix', orderPlaced: true, orderUpdates: true } })
+    const sent = []
+    const fetcher = async (url, init) => { sent.push({ url, body: JSON.parse(init.body), key: init.headers['api-key'] }); return { ok: true, status: 200, json: async () => ({ status: 'success' }) } }
+    const order = await web.placeWebOrder({ db, now: NOW, secrets: { smsKey: 'arkesel-key' }, fetch: fetcher }, { requestId: rid(), payment: 'pay_later', details, lines: [{ id: 'serum', qty: 1 }] })
+    expect(sent[0]).toMatchObject({ url: 'https://sms.arkesel.com/api/v2/sms/send', key: 'arkesel-key', body: { sender: 'SkinMatrix', recipients: ['233241234567'] } })
+    expect(sent[0].body.message).toContain(order.ref)
+    await h.updateWebOrder({ ...ctx(STAFF), secrets: { smsKey: 'arkesel-key' }, fetch: fetcher }, { orderId: order.ref, action: 'confirm' })
+    expect(sent[1].body.message).toContain('confirmed')
+    const down = async () => { throw new Error('network down') }
+    const second = await web.placeWebOrder({ db, now: NOW, secrets: { smsKey: 'arkesel-key' }, fetch: down }, { requestId: rid(), payment: 'pay_later', details, lines: [{ id: 'serum', qty: 1 }] })
+    expect(second.ref).toMatch(/^SM-/)
+    const log = (await db.collection('smsLog').get()).docs.map((doc) => doc.data())
+    expect(log.filter((row) => row.ok)).toHaveLength(2)
+    expect(log.find((row) => !row.ok).error).toBe('network down')
   })
 })

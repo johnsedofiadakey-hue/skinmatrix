@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { canBuy, checkSiteEdits, cleanProduct, DEFAULT_CONTENT, DEFAULT_PRODUCTS, fillShopDetails, formatGhs, mergeCatalog, mergeContent, parseGhs } from './site.js'
-import { buildOrder, cartLines, checkDetails, newOrderRef, normalizeGhanaPhone, orderTotals, PAYMENT } from './orders.js'
+import { cartLines, checkDetails, normalizeGhanaPhone, orderRequest, orderTotals, PAYMENT, paystackReference } from './orders.js'
 import { addVitabioticsDrafts, importVitabioticsCatalogue, vitabioticsDraft } from './vitabiotics.js'
 
 const priced = [
@@ -109,18 +109,15 @@ describe('website orders', () => {
     expect(orderTotals(lines, 'delivery', null)).toEqual({ subtotal: 195000, deliveryFee: null, total: 195000 })
   })
 
-  it('builds an order record the rules accept', () => {
-    const order = buildOrder({
-      ref: 'SM-ABC234',
-      cart: { a: 1 },
+  it('sends the server only ids, quantities and details (never prices)', () => {
+    const request = orderRequest({
+      requestId: 'req-12345678',
+      cart: { a: 1, b: 99 },
       products: priced,
       details: { name: ' Ama K ', phone: '0241234567', email: '', method: 'pickup', address: 'ignored', notes: 'Call first' },
-      checkout: { deliveryFee: 2000 },
-      payment: { method: PAYMENT.later, status: 'unpaid', reference: null },
+      payment: PAYMENT.later,
     })
-    expect(order).toMatchObject({ ref: 'SM-ABC234', status: 'new', channel: 'website', subtotal: 12000, deliveryFee: 0, total: 12000 })
-    expect(order.customer).toEqual({ name: 'Ama K', phone: '024 123 4567', email: '' })
-    expect(order.fulfilment).toEqual({ method: 'pickup', address: '', notes: 'Call first' })
+    expect(request).toEqual({ requestId: 'req-12345678', payment: 'pay_later', details: { name: 'Ama K', phone: '0241234567', email: '', method: 'pickup', address: 'ignored', notes: 'Call first' }, lines: [{ id: 'a', qty: 1 }, { id: 'b', qty: 20 }] })
   })
 
   it('keeps the product image with each new website order line', () => {
@@ -128,10 +125,10 @@ describe('website orders', () => {
     expect(lines[0].image).toBe('https://images.example/serum.png')
   })
 
-  it('makes short, unambiguous order numbers', () => {
+  it('makes a fresh Paystack reference for each payment attempt on an order', () => {
     let n = 0
-    expect(newOrderRef(() => n++)).toBe('SM-ABCDEF')
-    expect(newOrderRef()).toMatch(/^SM-[A-HJ-NP-Z2-9]{6}$/)
+    expect(paystackReference('SM-ABC234', () => n++)).toBe('SM-ABC234-ABCD')
+    expect(paystackReference('SM-ABC234')).toMatch(/^SM-ABC234-[A-HJ-NP-Z2-9]{4}$/)
   })
 })
 

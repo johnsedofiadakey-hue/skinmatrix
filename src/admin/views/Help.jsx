@@ -19,6 +19,22 @@ const TOPICS = [
     ],
   },
   {
+    id: 'drawer', title: 'Cash drawer (start and end of shift)', steps: [
+      'Start of shift: open Cash drawer, count the cash in the drawer and press Open drawer. You cannot take cash until your drawer is open.',
+      'Cash in or out that is not a sale (change from the bank, paying a rider): record it in Cash drawer with the reason. Cash out needs a manager.',
+      'End of shift: count all the cash and press Close drawer. If it does not match, write what happened. The owner sees every count in Reports → Drawers.',
+      'Forgot to close? A manager can count and close it for you in Cash drawer.',
+    ],
+  },
+  {
+    id: 'offline', title: 'No internet', steps: [
+      'You can keep selling. Sales are kept on this till and sent by themselves when the internet is back. The receipt says OFFLINE SALE.',
+      'Do not reload the page or clear the browser while sales are waiting. The POS page shows how many are waiting.',
+      'Discounts that need a manager’s PIN, returns, cancellations and stock changes must wait for the internet.',
+      'If the server refuses an offline sale (for example the stock ran out), it shows on the POS page. Fix the reason and press Try again.',
+    ],
+  },
+  {
     id: 'scanner', title: 'Barcode scanner', steps: [
       'USB scanner: plug it into the computer. It works straight away, like a keyboard.',
       'Bluetooth scanner: pair it with the phone, tablet or computer in its Bluetooth settings (keyboard mode, “HID”).',

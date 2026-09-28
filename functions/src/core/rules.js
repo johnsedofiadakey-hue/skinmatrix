@@ -15,8 +15,8 @@ export const ROLE_LABEL = { staff: 'Staff', manager: 'Manager', owner: 'Owner' }
 // What each role may do without anyone else's approval.
 const CAN = {
   staff: new Set(['sell', 'viewSales', 'webOrders', 'viewStock']),
-  manager: new Set(['sell', 'viewSales', 'webOrders', 'viewStock', 'approve', 'void', 'return', 'stock', 'deliveries', 'reports', 'costs']),
-  owner: new Set(['sell', 'viewSales', 'webOrders', 'viewStock', 'approve', 'void', 'return', 'stock', 'deliveries', 'reports', 'costs', 'products', 'staff', 'website', 'voidAnyDay']),
+  manager: new Set(['sell', 'viewSales', 'webOrders', 'viewStock', 'approve', 'void', 'return', 'stock', 'deliveries', 'reports', 'costs', 'cashOut', 'closeAnyShift']),
+  owner: new Set(['sell', 'viewSales', 'webOrders', 'viewStock', 'approve', 'void', 'return', 'stock', 'deliveries', 'reports', 'costs', 'cashOut', 'closeAnyShift', 'products', 'staff', 'website', 'settings', 'voidAnyDay']),
 }
 
 export function can(role, action) {
