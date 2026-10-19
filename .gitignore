@@ -5,3 +5,5 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 functions/.secret.local
+.DS_Store
+work/
