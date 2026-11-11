@@ -7,3 +7,7 @@ ui-debug.log
 functions/.secret.local
 .DS_Store
 work/
+
+# Desktop till app
+desktop/node_modules/
+desktop/release/

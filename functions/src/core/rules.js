@@ -37,3 +37,17 @@ export function requireReason(reason, label = 'reason') {
 }
 
 export const isValidPin = (pin) => /^\d{4,6}$/.test(String(pin ?? ''))
+
+// ── Staff sign-in with a username ("ama") instead of an email ──
+// Firebase Auth signs people in with an email, so each username is stored as a sign-in address on a domain the
+// shop owns that never receives mail. Staff never see it: they type their username and password.
+export const STAFF_LOGIN_DOMAIN = 'staff.skinmatrixgh.com'
+export const MIN_PASSWORD = 6
+
+// "Ama " -> "ama". Letters, numbers, dot, dash and underscore; starts with a letter; 2–24 characters.
+export const cleanUsername = (value) => String(value ?? '').trim().toLowerCase()
+export const isValidUsername = (value) => /^[a-z][a-z0-9._-]{1,23}$/.test(cleanUsername(value))
+export const usernameEmail = (value) => `${cleanUsername(value)}@${STAFF_LOGIN_DOMAIN}`
+// What the sign-in box accepts: a username, or the owner's own email.
+export const signInEmail = (value) => (String(value ?? '').includes('@') ? String(value).trim().toLowerCase() : usernameEmail(value))
+export const usernameOf = (email) => (String(email || '').toLowerCase().endsWith(`@${STAFF_LOGIN_DOMAIN}`) ? String(email).split('@')[0] : null)

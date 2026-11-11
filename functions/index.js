@@ -10,7 +10,10 @@ import { logger } from 'firebase-functions'
 import * as handlers from './src/handlers.js'
 import * as shifts from './src/shifts.js'
 import * as settings from './src/settings.js'
+import * as register from './src/register.js'
+import * as productsApi from './src/products.js'
 import * as web from './src/web.js'
+import * as momo from './src/momo.js'
 import { RuleError } from './src/core/rules.js'
 
 initializeApp()
@@ -69,6 +72,7 @@ export const saveSupplier = callable(handlers, 'saveSupplier')
 export const claimOwner = callable(handlers, 'claimOwner')
 export const createStaff = callable(handlers, 'createStaff')
 export const updateStaff = callable(handlers, 'updateStaff')
+export const setStaffLogin = callable(handlers, 'setStaffLogin')
 export const setMyPin = callable(handlers, 'setMyPin')
 export const recordSignIn = callable(handlers, 'recordSignIn')
 
@@ -76,6 +80,16 @@ export const openShift = callable(shifts, 'openShift')
 export const cashMovement = callable(shifts, 'cashMovement')
 export const closeShift = callable(shifts, 'closeShift')
 export const saveShopSettings = callable(settings, 'saveShopSettings')
+export const recordNoSale = callable(register, 'recordNoSale')
+export const saveProduct = callable(productsApi, 'saveProduct')
+export const closeDay = callable(register, 'closeDay')
+
+// MoMo prompts at the till (Paystack charges the customer's phone; see src/momo.js).
+export const momoPromptReady = callable(momo, 'momoPromptReady')
+export const startMomoPrompt = callable(momo, 'startMomoPrompt')
+export const checkMomoPrompt = callable(momo, 'checkMomoPrompt')
+export const submitMomoOtp = callable(momo, 'submitMomoOtp')
+export const cancelMomoPrompt = callable(momo, 'cancelMomoPrompt')
 
 // Website checkout (no sign-in).
 export const placeWebOrder = callable(web, 'placeWebOrder')

@@ -1,0 +1,51 @@
+{
+  "name": "skinmatrix-till",
+  "productName": "SkinMatrix Till",
+  "version": "1.5.0",
+  "description": "SkinMatrix till: the shop system full screen, receipts straight to the printer, cash drawer and customer screen",
+  "private": true,
+  "main": "main.js",
+  "author": "SkinMatrix",
+  "scripts": {
+    "start": "electron .",
+    "dev": "SKINMATRIX_TILL_URL=http://localhost:5182/admin/ electron .",
+    "test": "node --test test/*.test.js",
+    "dist:win": "electron-builder --win nsis --x64",
+    "dist:mac": "electron-builder --mac dmg"
+  },
+  "devDependencies": {
+    "electron": "45.2.2",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "com.skinmatrixgh.till",
+    "productName": "SkinMatrix Till",
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**",
+      "offline.html",
+      "build/icon.png"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "SkinMatrix Till",
+      "include": "build/installer.nsh"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "build/icon.png",
+      "category": "public.app-category.business"
+    }
+  }
+}

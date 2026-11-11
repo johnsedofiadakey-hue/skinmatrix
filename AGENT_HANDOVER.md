@@ -42,7 +42,7 @@ Pure rules: `src/core/{rules,sale,stock,time}.js`. The client imports these too 
 
 Other server modules: `src/web.js` (website checkout, no sign-in), `src/shifts.js` (cash drawers), `src/settings.js` (owner settings), `src/sms.js` (mNotify), `src/shared.js` (helpers every command uses). Pure rules also in `src/core/{order,shift,tax}.js`.
 
-**Commands:** `placeWebOrder`, `verifyWebPayment` (public), `paystackWebhook` (HTTP), `openShift`, `cashMovement`, `closeShift`, `saveShopSettings`, `completeSale`, `voidSale`, `returnItems`, `updateWebOrder` (confirm takes stock; cancel puts it back), `receiveDelivery`, `adjustStock`, `writeOffExpired`, `submitStockCount` (refused with `details.stale` if stock moved mid-count), `saveProductSetup`, `saveSupplier`, `claimOwner`, `createStaff` (returns a one-time 12-character password), `updateStaff` (turning someone off disables Auth and revokes tokens; there is always one active owner), `setMyPin`, `recordSignIn`.
+**Commands:** `placeWebOrder`, `verifyWebPayment` (public), `paystackWebhook` (HTTP), `openShift`, `cashMovement`, `closeShift`, `saveShopSettings`, `completeSale`, `voidSale`, `returnItems`, `updateWebOrder` (confirm takes stock; cancel puts it back), `receiveDelivery`, `adjustStock`, `writeOffExpired`, `submitStockCount` (refused with `details.stale` if stock moved mid-count), `saveProductSetup`, `saveProduct` (`src/products.js`: one form writes catalog + catalogOps + catalogCosts + opening batch in one transaction), `saveSupplier`, `claimOwner`, `createStaff` (name + username + optional password; generates one if blank), `setStaffLogin` (owner changes a staff username/password; revokes tokens), `updateStaff` (turning someone off disables Auth and revokes tokens; there is always one active owner), `setMyPin`, `recordSignIn`.
 
 **Website orders:** the checkout sends only product ids, quantities and details to `placeWebOrder`, which prices from `site/catalog` + `site/content.checkout.deliveryFee`, refuses hidden/unpriced/out-of-stock (`site/availability`) items, limits 5 waiting orders per phone, generates the ref and saves the order. Clients can no longer write `orders` at all. Paystack: the order is saved first with `payment.status: 'pending'`, the popup charges the server's total with reference `SM-XXXXXX-ABCD` (new suffix per attempt), then `verifyWebPayment` asks Paystack's verify API; the signed webhook (`charge.success`, HMAC-SHA512) does the same if the browser closes. Result: `paid` (amount and GHS match), or `mismatch` (a manager can accept after checking). Staff cannot confirm a `pending` order. Without the `PAYSTACK_SECRET_KEY` secret, verify falls back to the old `reported` + manual check.
 
@@ -72,10 +72,43 @@ Other server modules: `src/web.js` (website checkout, no sign-in), `src/shifts.j
 - `LiveProvider.jsx`: live listeners plus `call()`.
 - `live/firebase.js`: SDK wiring and error reading.
 - Pages other than Home, POS and Website orders are lazy-loaded (`React.lazy`). The admin JS is still about 800 kB, and most of that is the Firebase SDK (full Firestore + Auth).
-- Views: `Home`, `Sell` (POS; offline queue in `components/offline.jsx`), `Drawer` (cash drawer + `DrawerReport`), `Settings` (owner: VAT, SMS, SMS log), `Sales` (reprint, WhatsApp, return, cancel), `WebsiteOrders`, `Stock` (list, batches, adjust, receive delivery, stock take, write-off), `Reports` (money, cash in drawer, profit, by staff, best sellers, activity log, printable day summary, CSV), `Setup` (products: barcode, SKU, cost, low-stock level, expiry), `Team`, `Website` (other agent's editor, owner only), `Account` (password, approval PIN, auto-print), `Help`.
+- Views: `Home`, `Sell` (POS; offline queue in `components/offline.jsx`), `Drawer` (cash drawer + `DrawerReport`), `Settings` (owner: VAT, SMS, SMS log), `Sales` (reprint, WhatsApp, return, cancel), `WebsiteOrders`, `Stock` (list, batches, adjust, receive delivery, stock take, write-off), `Reports` (money, cash in drawer, profit, by staff, best sellers, activity log, printable day summary, CSV), `Products` (route `#/setup`: list with filters, one product form, `pos/ReceiveStock.jsx` quick receive), `Team`, `Website` (other agent's editor, owner only), `Account` (password, approval PIN, auto-print), `Help`.
 - Every page has a `Guide` (how-to box that can be folded away; remembered per device).
 - **Receipts:** `components/receipt.jsx`. `PrintArea` is portalled into `<body>`; `@media print` in `admin.css` prints only it at 80 mm (`@page size 80mm`). Auto-print is a per-device option. WhatsApp receipts use `wa.me`.
 - **Scanners:** `components/scanner.jsx`. USB/Bluetooth scanners are detected as fast keystrokes + Enter when no text box has focus (keys ≤ 120 ms apart, Enter within 400 ms). Camera: native `BarcodeDetector`, else lazy-loaded `@zxing/browser`. Needs HTTPS.
+
+**Till hardware and cash register (added 2026-11-10):**
+- **Per-device settings.** `src/admin/till/device.js` holds them in localStorage `skinmatrix-till`: printer mode, drawer, customer screen, MoMo number to show. They are edited in the **Till setup** page (`#/till`, `views/Till.jsx`).
+- **Printing.** `till/escpos.js` is the pure ESC/POS encoder for the sale receipt, No sale, X reading, drawer slip and Z report, with tests in `escpos.test.js`.
+  - With the desktop app (`window.skinmatrixTill`), slips print raw, and cash sales and cash refunds kick the drawer.
+  - Otherwise slips use the browser print window (`till/printing.jsx`).
+- **Customer screen.** `/admin/display.html` (`src/display/`) has no Firebase and no sign-in. The till publishes basket, payment and thank-you state over the BroadcastChannel `skinmatrix-customer-display` (`till/display.js`). The browser places it with the Window Management API.
+- **Cash register (server, `functions/src/register.js`):**
+  - `recordNoSale` logs a drawer opening (audit type `drawer`, increments `shifts.noSales`). It is idempotent, and the till can queue it offline through `LiveProvider.queueCall`.
+  - `closeDay` writes `zReports/{day}`, numbered Z0001 and up via `counters/zReports`. It runs once per day and refuses with `drawers_open` unless `allowOpenDrawers` is set. Pure summary: `core/zreport.js`.
+  - UI: Reports → Close the day; Cash drawer → Print X reading and closing slip.
+  - Rules: `zReports` is readable by managers.
+- **Offline start-up.** `/admin/sw.js` is built by the `adminServiceWorker` plugin in `vite.config.js` from `src/admin/sw-template.js`. It precaches every admin and display chunk.
+- **Desktop app.** `desktop/` (Electron 45) is described in `desktop/README.md`. It has a sandboxed preload with 5 calls; IPC accepts the app origin only. Raw printing uses the Windows spooler through a persistent PowerShell worker, CUPS `lp -o raw` on Mac, or TCP 9100 to private IPs only. The customer window is not focusable on the second monitor. Its default URL is `skinmatrixgh.web.app` (MTN DNS blocks the .com).
+- **Verified on emulators:** the customer screen live through basket, change and thank-you; No sale; Z report close and print; Electron cash sale printing a receipt plus drawer kick to a fake TCP printer.
+- **Not verified:** a real printer or drawer, Windows (spooler path), a real second monitor, the installer build.
+
+**POS and till upgrade (2026-11-10, second pass):**
+- **Usernames.** Staff sign in with username + password. Username `ama` is Firebase Auth email `ama@staff.skinmatrixgh.com` (`core/rules.js`: `usernameEmail`, `signInEmail`, `usernameOf`). Typing a full email still works (owner). Existing staff keep their email until the owner gives them a username in Team (`setStaffLogin`).
+- **POS** (`views/Sell.jsx`, `pos.css`): full-screen, touch first (tiles, chips, 56 px+ targets), ticket panel, Pay screen with keypad (`pos/Keypad.jsx`, also takes the physical keyboard), done screen, Hold/Resume (`pos/held.js`, localStorage `skinmatrix-held-sales`, per device). The admin menu opens as a sheet from the POS header.
+- **Theme** (`src/admin/theme.js`): `data-theme` on `<html>`, set before paint in `admin/index.html`; choice in localStorage `skinmatrix-theme` (system/light/dark). Dark tokens in `admin.css`; receipts always print on white.
+- **Customer screen:** shows only the current sale and the amount to pay; idle = slideshow of in-stock products with photos (`src/display/`).
+- **Screen placement (desktop app):** `desktop/lib/screens.js` `pickScreens`: saved choice (config `tillScreen`/`customerScreen`) wins; otherwise the automatic choice is REVERSED for the shop's terminal (customer view on the touch-reporting screen, else on the main display). **Swap screens** (POS header, Till setup, Ctrl+Shift+S; `till/display.js` `swapScreens`, works with app 1.1.0+) saves the opposite. App 1.3.0: the saved choice also stores each monitor's place and name/size (`fingerprint`), because Windows can change display ids after a restart (that lost the choice every restart). The customer window is a normal window (minimise/maximise/close), opened maximised; dragging it (or the till, or Win+Shift+arrow) to the other monitor saves that as the choice and moves the other window across (`rememberPlacement`). Keyboard focus returns to the till after the customer window is used, so scans are not lost. It never opens the customer window on the till screen; with one screen it opens nothing unless a preview is asked for (Ctrl+Shift+D). IPC: `listScreens`, `chooseCustomerScreen`, `identifyScreens`.
+- **Till setup** (`views/Till.jsx`): 3 steps (printer, drawer, customer screen), each with a test and a "Did it work?" question that shows fixes. The printer test page (`escpos.js` `printerTestOps`) has a width ruler, styles, a sample receipt and a cut. Passed checks are stored per device in `till.checks`, tied to the printer settings.
+- **Verified locally:** POS in light and dark, MoMo sale, customer display basket + idle slideshow, username sign-in, add product with opening stock, receive stock; Electron: one screen → no customer window, preview on request, printer test page + cut received by a fake TCP printer. `npm run test:functions` 34/34, desktop tests 10/10.
+- **Not verified:** a real printer/drawer/second monitor, the Windows build of this version (rebuild the installer: `cd desktop && npm run dist:win`).
+- **Not deployed:** the live functions predate commit d93e51d. Deploy needs both secrets set first.
+
+**MoMo prompts at the till (2026-11-11):** `functions/src/momo.js` + `core/momo.js`; till side `src/admin/pos/momoPrompt.jsx`.
+- Pay → MoMo → "Prompt on their phone": the cashier types the number (network from the prefix), `startMomoPrompt` prices the sale on the server, checks stock and discount approval, saves `momoCharges/{POS-…}` (no client access) and calls Paystack `POST /charge` (mobile_money). The till polls `checkMomoPrompt` every 4 s (server calls `/transaction/verify`); the webhook (`charge.success`, reference `POS-…`) does the same. Success → `completeSale(ctx, sale, { prompt })` saves the sale once (payment `{ method: 'momo', prompt: true, reference, phone masked }`).
+- Edge cases are recorded in `audit` (type `momo_prompt`) for a manager to refund in Paystack: approved after Cancel (`paid_after_cancel`), two approved prompts for one sale (`duplicate`), stock gone by approval time (`paid_not_sold`), wrong amount (`mismatch`). OTP networks: `submitMomoOtp`.
+- Off until a real `sk_test_`/`sk_live_` key is set (`momoPromptReady`); the old "customer sends to shop number" stays. Test mode shows a banner on the Pay screen. Local testing: start emulators with `PAYSTACK_TEST_BASE=http://127.0.0.1:9500` (emulator only) and a pretend Paystack.
+- **Not verified:** real Paystack (test or live) — especially Telecel's flow and the exact `abandoned` timing.
 
 ## Verified (2026-09-26)
 - `npm test` 12/12, `npm run test:functions` 17/17, `npm run build` passes.
@@ -92,7 +125,7 @@ Other server modules: `src/web.js` (website checkout, no sign-in), `src/shifts.j
 1. Blaze plan on `skinmatrixgh` (Functions need it).
 2. `npm run build && firebase deploy --only functions,firestore:rules,hosting`.
 3. The owner signs in at `/admin/` with the account in `admins/{uid}` and presses "Set up the shop as owner". Then: Account → set PIN; Products → barcodes and costs; Stock → Receive delivery for the opening stock; Team → add staff.
-4. On the till PC: Help → Receipt printer (80 mm paper, margins None, optional `--kiosk-printing`).
+4. On the till PC: install the desktop app, sign in, then Till setup → run all three checks.
 
 ## Verified (2026-09-28)
 - `npm test` 17/17, `npm run test:functions` 30/30, `npm run build` passes (storefront still preloads only the same 240 kB chunk as before).
@@ -115,3 +148,18 @@ Other server modules: `src/web.js` (website checkout, no sign-in), `src/shifts.j
 - Business day = UTC date (= Ghana).
 - New business rules go in `functions/src/core/*` or a handler, with a test in `functions/test/handlers.test.js`.
 - Admin styling: `src/admin/admin.css` only, mobile first, Inter for UI and Satoshi for headings.
+
+## Offline-sale disk backup and failure guards (desktop 1.4.0, 2026-11-11)
+- `desktop/lib/backup.js`: every change to the offline queue is mirrored to `Documents\SkinMatrix Till Backups\unsent-<uid>.json` (temp file + fsync + rename) and every offline event (made/sent/problem/removed/restored) is appended to `offline-sales-YYYY-MM.csv` (UTF-8 BOM, formula-safe cells). Optional second folder (`backupFolder` in till-config.json, set from Till setup). One folder failing is reported, all failing throws.
+- IPC: `till:backupUnsent`, `till:readUnsent`, `till:logOffline`, `till:backupInfo`, `till:openBackupFolder`, `till:chooseBackupFolder`. Dev-only override `SKINMATRIX_TILL_BACKUP_DIR`.
+- `LiveProvider`: on start, restores sales present on disk but missing from localStorage (safe: `completeSale` is idempotent per `requests/{uid}_{requestId}`), then mirrors. Writes run one at a time on `backupChain`.
+- Main process reloads the page on `render-process-gone`.
+- `src/admin/live/risks.js` (`tillWarnings`): clock off by more than 5 min (Date header of a HEAD to /admin/index.html), unsent sales 2+ days old while offline (urgent at 5, 7-day server limit), backup failures. Shown as banners on the POS.
+- Switch user / Sign out need a second tap when this person has unsent offline sales.
+- Verified locally in Electron with emulators: offline sale → disk files; localStorage wiped + reload → restored and sent once (no duplicate on the server).
+
+## Open on wake (desktop 1.5.0, 2026-11-11)
+- The shop's power button is set to hibernate. Login items don't run on resume, so `desktop/lib/autostart.js` registers a per-user Windows scheduled task "SkinMatrix Till (open on wake)" (UTF-16 XML through schtasks /Create /XML): triggers are sign-in, SessionUnlock, ConsoleConnect, and the Power-Troubleshooter event 1 (resume). If event triggers are refused it falls back to sign-in and unlock only. Created once per exe path and version (`autoStartTask` in till-config.json); removed when `startOnLogin` is false and by the uninstaller (`build/installer.nsh`).
+- `powerMonitor` resume and unlock-screen events, and second-instance launches, call `wakeUp()`: reload if the page crashed, restore and show the till, `relayout()` both screens.
+- Till setup shows the status from `till:info().autoStart`.
+- Not verified on Windows (built on a Mac); the schtasks call is unit-tested with a fake schtasks.

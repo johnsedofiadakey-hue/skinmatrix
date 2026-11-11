@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
+import { collection, doc, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import { liveDb } from '../live/firebase.js'
 import { useNow, useOps } from '../hooks.js'
 import { formatMoney } from '../lib/money.js'
@@ -10,6 +10,9 @@ import { Guide } from '../components/guide.jsx'
 import { PrintArea, printNow } from '../components/receipt.jsx'
 import { downloadCsv, fmtDayKey, fmtFull, fmtWhen } from '../components/format.js'
 import { DrawerReport } from './Drawer.jsx'
+import { summarizeDay } from '../../../functions/src/core/zreport.js'
+import { zReportOps } from '../till/escpos.js'
+import { useSlipPrinter } from '../till/printing.jsx'
 
 const PERIODS = [
   { value: 'today', label: 'Today', days: 1 },
@@ -82,6 +85,7 @@ export default function Reports() {
       'Each cashier counts and closes their own drawer (Cash drawer). Drawers shows every count and any difference.',
       'Check the MoMo total against the shop MoMo statement.',
       'Press Print day summary to keep a paper copy, or Download for Excel.',
+      'At the end of the day, a manager opens Close the day and records the Z report. It prints and is kept for good.',
       'Profit uses the cost you typed when receiving deliveries. Products with no cost count as zero cost.',
     ]} />
     <div className="toolbar">
@@ -92,12 +96,13 @@ export default function Reports() {
       </div> : null}
     </div>
     <p className="muted">{label}</p>
-    <Segmented label="Report" value={tab} onChange={setTab} options={[{ value: 'money', label: 'Money' }, { value: 'products', label: 'Products' }, { value: 'drawers', label: 'Drawers' }, { value: 'activity', label: 'Activity' }]} />
-    {sales === null ? <p className="muted">Loading…</p> : null}
+    <Segmented label="Report" value={tab} onChange={setTab} options={[{ value: 'money', label: 'Money' }, { value: 'products', label: 'Products' }, { value: 'drawers', label: 'Drawers' }, { value: 'activity', label: 'Activity' }, { value: 'close', label: 'Close the day' }]} />
+    {sales === null && tab !== 'close' ? <p className="muted">Loading…</p> : null}
     {sales && tab === 'money' ? <MoneyReport summary={summary} label={label} onCsv={exportCsv} /> : null}
     {sales && tab === 'products' ? <ProductReport summary={summary} /> : null}
     {tab === 'drawers' ? <DrawerReport shifts={shifts} /> : null}
     {tab === 'activity' ? <Activity range={range} /> : null}
+    {tab === 'close' ? <CloseDay today={today} /> : null}
   </div>
 }
 
@@ -157,7 +162,7 @@ function ProductReport({ summary }) {
   </Card>
 }
 
-const AUDIT_LABEL = { shift: 'Cash drawer', settings: 'Settings', web_payment: 'Website payment', sale: 'Sale', void: 'Sale cancelled', return: 'Return', web_order: 'Website order', delivery: 'Delivery', stock_adjustment: 'Stock adjusted', write_off: 'Write-off', stock_count: 'Stock take', product_setup: 'Product setup', supplier: 'Supplier', staff: 'Team' }
+const AUDIT_LABEL = { shift: 'Cash drawer', settings: 'Settings', web_payment: 'Website payment', sale: 'Sale', void: 'Sale cancelled', return: 'Return', web_order: 'Website order', delivery: 'Delivery', stock_adjustment: 'Stock adjusted', write_off: 'Write-off', stock_count: 'Stock take', product_setup: 'Product setup', supplier: 'Supplier', staff: 'Team', drawer: 'Drawer opened (no sale)', zreport: 'Day closed' }
 
 function Activity({ range }) {
   const now = useNow(60000)
@@ -178,4 +183,82 @@ function Activity({ range }) {
       <span><b>{AUDIT_LABEL[row.type] || row.type}:</b> {row.summary}{row.detail ? <span className="muted"> — {row.detail}</span> : null}</span>
     </li>)}</ul> : <Empty title="Nothing recorded in this period" />}
   </>
+}
+
+// Z report: a manager closes the business day. The server records the totals for good (numbered Z0001, Z0002…)
+// and the till prints it. Past Z reports can be reprinted.
+function CloseDay({ today }) {
+  const { call, shop, toast } = useOps()
+  const [day, setDay] = useState(today)
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(null)
+  const [existing, setExisting] = useState(undefined)
+  const [history, setHistory] = useState(null)
+  const sales = useRange('sales', day, day)
+  const shifts = useRange('shifts', day, day)
+  const slips = useSlipPrinter()
+
+  useEffect(() => {
+    setExisting(undefined)
+    return onSnapshot(doc(liveDb, 'zReports', day), (snap) => setExisting(snap.exists() ? snap.data() : null), () => setExisting(null))
+  }, [day])
+  useEffect(() => onSnapshot(query(collection(liveDb, 'zReports'), orderBy('day', 'desc'), limit(30)), (snap) => setHistory(snap.docs.map((item) => item.data())), () => setHistory([])), [])
+
+  const preview = useMemo(() => (sales && shifts ? summarizeDay(sales, shifts) : null), [sales, shifts])
+  const open = (shifts || []).filter((shift) => shift.status === 'open')
+  const printZ = (report) => slips.print(zReportOps({ shop, report, at: Date.now() }))
+
+  const close = async (allowOpenDrawers = false) => {
+    setBusy(true)
+    try {
+      const result = await call('closeDay', { day, note: note.trim(), allowOpenDrawers }, { quiet: true })
+      if (result) {
+        toast(`Day closed: ${result.report.number}.`)
+        setConfirmOpen(null)
+        printZ(result.report)
+      }
+    } catch (error) {
+      if (error.code === 'drawers_open') setConfirmOpen(error.message)
+      else toast(error.message, 'error')
+    } finally { setBusy(false) }
+  }
+
+  return <div className="stack">
+    <label className="field compact"><span>Business day</span><input type="date" max={today} value={day} onChange={(event) => event.target.value && setDay(event.target.value)} /></label>
+    {existing === undefined || !preview ? <p className="muted">Loading…</p> : existing ? <Card title={`Closed · ${existing.number}`}>
+      <div className="stack">
+        <p className="small">Closed by {existing.closedBy?.name} at {fmtFull(existing.closedAt)}. Takings <b>{formatMoney(existing.net)}</b> from {existing.count} sale(s).</p>
+        <button type="button" className="btn secondary" onClick={() => printZ(existing)}><Icon name="printer" size={16} /> Reprint Z report</button>
+      </div>
+    </Card> : <Card title={day === today ? 'Close today' : `Close ${fmtDayKey(day)}`}>
+      <div className="stack">
+        <div className="stat-grid">
+          <Stat label="Takings" value={<Money value={preview.net} />} sub={`${preview.count} sale(s)${preview.refunds ? ` · ${formatMoney(preview.refunds)} refunded` : ''}`} />
+          <Stat label="Cash" value={<Money value={preview.byMethod.cash} />} sub={`MoMo ${formatMoney(preview.byMethod.momo)} · Card ${formatMoney(preview.byMethod.card)}`} />
+          <Stat label="Drawers" value={preview.drawers.length} sub={open.length ? `${open.length} still open` : 'All closed'} tone={open.length ? 'warn' : ''} />
+          <Stat label="Cash difference" value={<Money value={preview.cashDifference} />} tone={preview.cashDifference < 0 ? 'bad' : ''} />
+        </div>
+        {open.length ? <p className="callout warn small">Still open: {open.map((shift) => shift.cashier?.name).join(', ')}. Close the drawers first (Cash drawer → Other open drawers) so the Z report has every count.</p> : null}
+        <label className="field"><span>Note <em>optional</em></span><input value={note} onChange={(event) => setNote(event.target.value)} maxLength={300} placeholder="e.g. power cut from 2 pm" /></label>
+        <button type="button" className="btn primary large" disabled={busy} onClick={() => close(false)}>{busy ? 'Closing…' : 'Close the day and print Z report'}</button>
+        <p className="muted small">A day can only be closed once. Sales made later on this day (for example offline sales sent tomorrow) still count in Reports, but not in this Z report.</p>
+      </div>
+    </Card>}
+    {confirmOpen ? <Card title="Drawers still open">
+      <div className="stack">
+        <p className="small">{confirmOpen}</p>
+        <div className="row end">
+          <button type="button" className="btn ghost" onClick={() => setConfirmOpen(null)}>Go back</button>
+          <button type="button" className="btn danger" disabled={busy} onClick={() => close(true)}>Close the day anyway</button>
+        </div>
+      </div>
+    </Card> : null}
+    {history?.length ? <Card title="Earlier Z reports" flush>
+      <table className="table compact"><thead><tr><th scope="col">Z</th><th scope="col">Day</th><th scope="col">Closed by</th><th scope="col" className="num">Takings</th><th scope="col" /></tr></thead>
+        <tbody>{history.map((report) => <tr key={report.day}><td>{report.number}</td><td>{fmtDayKey(report.day)}</td><td>{report.closedBy?.name}</td><td className="num">{formatMoney(report.net)}</td><td className="num"><button type="button" className="btn ghost small" onClick={() => printZ(report)}>Print</button></td></tr>)}</tbody>
+      </table>
+    </Card> : null}
+    {slips.area}
+  </div>
 }

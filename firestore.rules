@@ -90,5 +90,8 @@ service cloud.firestore {
       allow read: if isManager() || (isStaff() && resource.data.cashier.uid == request.auth.uid);
       allow write: if false;
     }
+
+    // Z reports (the closing record of each business day): managers and the owner. Only closeDay writes.
+    match /zReports/{day} { allow read: if isManager(); allow write: if false; }
   }
 }

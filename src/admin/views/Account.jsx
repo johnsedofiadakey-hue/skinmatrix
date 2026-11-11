@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth'
 import { useOps } from '../hooks.js'
 import { authMessage } from '../cloud.jsx'
-import { ROLE_LABEL } from '../../../functions/src/core/rules.js'
-import { Card, Icon } from '../components/ui.jsx'
+import { ROLE_LABEL, usernameOf } from '../../../functions/src/core/rules.js'
+import { Card, Icon, Segmented } from '../components/ui.jsx'
+import { setThemeMode, useTheme } from '../theme.js'
 import { autoPrintEnabled, setAutoPrint } from '../components/receipt.jsx'
 
 export default function Account() {
@@ -12,7 +13,7 @@ export default function Account() {
   return <div className="stack narrow">
     <Card title="Me">
       <div className="stack">
-        <p><b>{me.name}</b><span className="muted block">{user.email} · {ROLE_LABEL[me.role]}</span></p>
+        <p><b>{me.name}</b><span className="muted block">{usernameOf(user.email) ? `Username ${usernameOf(user.email)}` : user.email} · {ROLE_LABEL[me.role]}</span></p>
         <button type="button" className="btn ghost" onClick={signOut}><Icon name="logout" size={16} /> Sign out</button>
         <p className="muted small">On a shared shop computer, always sign out at the end of your shift.</p>
       </div>
@@ -20,6 +21,7 @@ export default function Account() {
     <PasswordCard />
     {can('approve') ? <PinCard /> : null}
     <Card title="This device">
+      <ThemePicker />
       <label className="check"><input type="checkbox" checked={autoPrint} onChange={(event) => { setAutoPrint(event.target.checked); setAutoPrintState(event.target.checked) }} /> Print the receipt automatically after every sale</label>
       <p className="muted small">See Help → Receipt printer to stop the print window asking every time.</p>
     </Card>
@@ -85,4 +87,12 @@ function PinCard() {
       <button type="submit" className="btn primary" disabled={!valid || busy}>{busy ? 'Saving…' : 'Save PIN'}</button>
     </form>
   </Card>
+}
+
+function ThemePicker() {
+  const { mode } = useTheme()
+  return <div className="field"><span>Appearance</span>
+    <Segmented label="Appearance" value={mode} onChange={setThemeMode} options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }, { value: 'system', label: 'Same as computer' }]} />
+    <p className="muted small">Saved on this device only. The moon button on the POS switches too.</p>
+  </div>
 }

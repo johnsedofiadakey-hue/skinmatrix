@@ -29,3 +29,16 @@ export const salePayload = (entry) => ({
 
 // Codes that mean "the server was not reached": try again later rather than asking a person.
 export const isConnectionProblem = (code) => ['unavailable', 'deadline-exceeded', 'network', 'internal', 'unknown'].includes(code) || !navigator.onLine
+
+// Other small records made offline that only need to reach the server later (for now: the cash drawer opened
+// without a sale). entry: { name, data, at }. Each carries its own requestId, so sending twice is harmless.
+const pendingKey = (uid) => `skinmatrix-pending-${uid}`
+export function readPending(uid) {
+  try {
+    const list = JSON.parse(localStorage.getItem(pendingKey(uid)) || '[]')
+    return Array.isArray(list) ? list : []
+  } catch { return [] }
+}
+export function writePending(uid, list) {
+  try { localStorage.setItem(pendingKey(uid), JSON.stringify(list)); return true } catch { return false }
+}

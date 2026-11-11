@@ -176,6 +176,10 @@ export async function handlePaystackWebhook(ctx, { rawBody, signature }) {
   if (expected.length !== given.length || !timingSafeEqual(expected, given)) return 401
   let event
   try { event = JSON.parse(rawBody.toString('utf8')) } catch { return 400 }
-  if (event?.event === 'charge.success') await applyPaystackCharge(ctx, event.data, 'webhook')
+  if (event?.event === 'charge.success') {
+    // Till MoMo prompts (POS-…) save a sale; website payments (SM-…) mark the order paid.
+    if (String(event.data?.reference || '').startsWith('POS-')) await (await import('./momo.js')).applyMomoCharge(ctx, event.data, 'webhook')
+    else await applyPaystackCharge(ctx, event.data, 'webhook')
+  }
   return 200
 }

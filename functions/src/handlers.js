@@ -2,10 +2,11 @@
 // re-reads prices from the catalogue, and changes sales, stock and the audit log together in one Firestore
 // transaction, so a failed command changes nothing.
 import { randomBytes } from 'node:crypto'
-import { can, DISCOUNT_LIMIT, isValidPin, RETURN_WINDOW_DAYS, requireReason, ROLE_LABEL, ROLES, RuleError } from './core/rules.js'
+import { can, cleanUsername, DISCOUNT_LIMIT, isValidPin, isValidUsername, MIN_PASSWORD, RETURN_WINDOW_DAYS, requireReason, ROLE_LABEL, ROLES, RuleError, usernameEmail } from './core/rules.js'
 import { checkExpiry, checkLot } from './core/stock.js'
 import { applyDiscount, checkOffline, checkPayment, cleanCustomer, discountNeedsApproval, isValidBarcode, priceCart, returnedQuantity, returnValue } from './core/sale.js'
 import { businessDay, DAY } from './core/time.js'
+import { maskMomoNumber } from './core/momo.js'
 import { taxBreakdown } from './core/tax.js'
 import { readSettings } from './settings.js'
 import { addCash, readOpenShift, requireShift } from './shifts.js'
@@ -15,20 +16,26 @@ import { actorRef, approvalCheck, audit, checkRequestId, hashPin, movement, pad,
 
 // ── Sales at the till ─────────────────────────────────────────────────────────────────────────
 
-export async function completeSale(ctx, data) {
+// internal (server only, never from a browser): { prompt: { reference, network, phone, amount }, approver }
+// — a MoMo prompt that Paystack confirmed (src/momo.js). The sale is then paid by that charge, and the discount
+// approval was already checked when the prompt was sent.
+export async function completeSale(ctx, data, internal = {}) {
   const { db, uid, now } = ctx
   const staff = await requireStaff(db, uid, 'sell')
   const requestId = checkRequestId(data?.requestId)
-  const offline = checkOffline(data?.offline, now)
+  const prompt = internal.prompt || null
+  const offline = prompt ? null : checkOffline(data?.offline, now)
   const discountCheck = (subtotal, amount) => (person) => (discountNeedsApproval(person.role, subtotal, amount) ? `Discounts over ${DISCOUNT_LIMIT[person.role]}% need approval.` : '')
 
   // Work out whether an approval is needed before the transaction, so the PIN is checked once.
   const catalog = (await db.doc('site/catalog').get()).data()?.products || []
   const { subtotal: previewSubtotal } = priceCart(catalog, data?.lines)
   const preview = { subtotal: previewSubtotal, amount: applyDiscount(previewSubtotal, data?.discount)?.amount || 0 }
-  const approver = discountNeedsApproval(staff.role, preview.subtotal, preview.amount)
-    ? await verifyApproval(db, data?.approval, staff, discountCheck(preview.subtotal, preview.amount), now)
-    : null
+  const approver = prompt
+    ? (internal.approver || null)
+    : discountNeedsApproval(staff.role, preview.subtotal, preview.amount)
+      ? await verifyApproval(db, data?.approval, staff, discountCheck(preview.subtotal, preview.amount), now)
+      : null
 
   let created = false
   const result = await db.runTransaction(async (tx) => {
@@ -45,7 +52,10 @@ export async function completeSale(ctx, data) {
     // the meantime, the difference is recorded on the sale (and in the activity log) for a manager to review.
     const adjustment = offline ? priced - offline.clientTotal : 0
     const total = priced - adjustment
-    const payment = checkPayment(data?.payment, total)
+    if (prompt && prompt.amount !== total) throw new RuleError('amount_changed', `The customer approved ${(prompt.amount / 100).toFixed(2)} GHS but the sale now costs ${(total / 100).toFixed(2)} GHS (a price changed).`)
+    const payment = prompt
+      ? { method: 'momo', received: total, change: 0, reference: prompt.reference, network: prompt.network, prompt: true, phone: maskMomoNumber(prompt.phone) }
+      : checkPayment(data?.payment, total)
     const customer = cleanCustomer(data?.customer)
     const batchesByProduct = await readBatches(tx, db, items.map((item) => item.productId))
     const availability = await readAvailability(tx, db)
@@ -508,26 +518,74 @@ function randomPassword() {
   return Array.from(randomBytes(12), (byte) => alphabet[byte % alphabet.length]).join('')
 }
 
+// The owner adds someone: name, username and a password they choose (or one is made up), and a role.
+// An email still works for the owner's own accounts, but staff need only a username.
 export async function createStaff({ db, auth, uid, now }, data) {
   const owner = await requireStaff(db, uid, 'staff')
   const name = String(data?.name ?? '').trim()
-  const email = String(data?.email ?? '').trim().toLowerCase()
   const role = data?.role
+  const username = data?.username === undefined ? null : cleanUsername(data.username)
+  const email = username !== null ? usernameEmail(username) : String(data?.email ?? '').trim().toLowerCase()
   if (name.length < 2 || name.length > 60) throw new RuleError('bad_name', 'Type the staff member’s name.')
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new RuleError('bad_email', 'Type a real email address. They sign in with it.')
+  if (username !== null && !isValidUsername(username)) throw new RuleError('bad_username', 'Usernames are 2 to 24 letters or numbers, starting with a letter, e.g. ama or kofi2.')
+  if (username === null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new RuleError('bad_email', 'Type a username for them.')
   if (!ROLES.includes(role)) throw new RuleError('bad_role', 'Choose a role.')
-  const password = randomPassword()
+  const chosen = data?.password === undefined || data?.password === '' ? null : checkPassword(data.password)
+  const password = chosen || randomPassword()
   let user
   try {
     user = await auth.createUser({ email, password, displayName: name })
   } catch (error) {
-    if (error?.code === 'auth/email-already-exists') throw new RuleError('email_taken', 'Someone already signs in with this email.')
+    if (error?.code === 'auth/email-already-exists') throw new RuleError(username !== null ? 'username_taken' : 'email_taken', username !== null ? `Someone already has the username ${username}. Try another, e.g. ${username}2.` : 'Someone already signs in with this email.')
     throw error
   }
-  await db.doc(`staff/${user.uid}`).set({ name, email, role, active: true, createdAt: now, lastActiveAt: null, hasPin: false })
+  await db.doc(`staff/${user.uid}`).set({ name, email, username, role, active: true, createdAt: now, lastActiveAt: null, hasPin: false })
   if (role === 'owner') await db.doc(`admins/${user.uid}`).set({ addedAt: now })
-  await db.collection('audit').add({ at: now, day: businessDay(now), type: 'staff', actor: actorRef(owner), ref: user.uid, summary: `Added ${name} as ${ROLE_LABEL[role]}`, detail: '' })
-  return { uid: user.uid, password }
+  await db.collection('audit').add({ at: now, day: businessDay(now), type: 'staff', actor: actorRef(owner), ref: user.uid, summary: `Added ${name} as ${ROLE_LABEL[role]}${username ? ` (username ${username})` : ''}`, detail: '' })
+  return { uid: user.uid, username, password: chosen ? null : password }
+}
+
+function checkPassword(value) {
+  const password = String(value ?? '')
+  if (password.length < MIN_PASSWORD || password.length > 64) throw new RuleError('bad_password', `The password needs at least ${MIN_PASSWORD} characters.`)
+  return password
+}
+
+// The owner gives someone a username, or sets a new password when they forget it. A new password signs them
+// out on every device. Owners change their own password in Account instead.
+export async function setStaffLogin({ db, auth, uid, now }, data) {
+  const owner = await requireStaff(db, uid, 'staff')
+  const targetId = String(data?.uid ?? '')
+  if (!targetId || targetId === uid) throw new RuleError('self_change', 'Change your own password in Account.')
+  const ref = db.doc(`staff/${targetId}`)
+  const snap = await ref.get()
+  if (!snap.exists) throw new RuleError('not_found', 'Staff member not found.')
+  const current = snap.data()
+  const changes = []
+  const update = {}
+  const authUpdate = {}
+  if (data?.username !== undefined && cleanUsername(data.username) !== (current.username || '')) {
+    const username = cleanUsername(data.username)
+    if (!isValidUsername(username)) throw new RuleError('bad_username', 'Usernames are 2 to 24 letters or numbers, starting with a letter, e.g. ama or kofi2.')
+    authUpdate.email = usernameEmail(username)
+    Object.assign(update, { username, email: authUpdate.email })
+    changes.push(`username → ${username}`)
+  }
+  if (data?.password !== undefined && data.password !== '') {
+    authUpdate.password = checkPassword(data.password)
+    changes.push('new password')
+  }
+  if (!changes.length) throw new RuleError('no_change', 'Type a new username or password.')
+  try {
+    await auth.updateUser(targetId, authUpdate)
+  } catch (error) {
+    if (error?.code === 'auth/email-already-exists') throw new RuleError('username_taken', `Someone already has the username ${update.username}.`)
+    throw error
+  }
+  if (authUpdate.password) await auth.revokeRefreshTokens(targetId)
+  if (Object.keys(update).length) await ref.update(update)
+  await db.collection('audit').add({ at: now, day: businessDay(now), type: 'staff', actor: actorRef(owner), ref: targetId, summary: `${current.name}: ${changes.join(', ')}`, detail: '' })
+  return { uid: targetId, username: update.username ?? current.username ?? null }
 }
 
 export async function updateStaff({ db, auth, uid, now }, data) {

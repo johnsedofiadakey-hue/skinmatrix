@@ -3,12 +3,13 @@ import { formatMoney } from '../lib/money.js'
 import { fmtFull } from './format.js'
 import { refundedAmount } from '../../../functions/src/core/sale.js'
 import { percentLabel } from '../../../functions/src/core/tax.js'
+import { getTill, setTill } from '../till/device.js'
 
 const PAID_BY = { cash: 'Cash', momo: 'Mobile money', card: 'Card' }
-const AUTO_PRINT_KEY = 'skinmatrix-auto-print'
 
-export const autoPrintEnabled = () => { try { return localStorage.getItem(AUTO_PRINT_KEY) === 'on' } catch { return false } }
-export const setAutoPrint = (on) => { try { localStorage.setItem(AUTO_PRINT_KEY, on ? 'on' : 'off') } catch { /* private mode */ } }
+// Auto-print is part of this till's settings (till/device.js).
+export const autoPrintEnabled = () => getTill().autoPrint
+export const setAutoPrint = (on) => setTill({ autoPrint: Boolean(on) })
 
 // The receipt, sized for 80 mm thermal paper. It is also what WhatsApp and printing send.
 export function Receipt({ sale, shop, productName }) {

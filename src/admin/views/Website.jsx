@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore/lite'
+import { doc, getDoc, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore/lite'
 import { db } from '../../cloud/firebase.js'
 import { CATEGORIES, checkSiteEdits, cleanProduct, formatGhs, mergeCatalog, mergeContent, parseGhs, PRODUCT_IMAGES, SHOP_FIELDS } from '../../cloud/site.js'
 import { addVitabioticsDrafts, importVitabioticsCatalogue } from '../../cloud/vitabiotics.js'
@@ -10,7 +10,7 @@ import { useOps } from '../hooks.js'
 const TABS = [
   { value: 'shop', label: 'Shop details' },
   { value: 'home', label: 'Home page' },
-  { value: 'products', label: 'Products' },
+  { value: 'products', label: 'Product descriptions' },
   { value: 'checkout', label: 'Checkout and payment' },
   { value: 'terms', label: 'Terms' },
 ]
@@ -20,7 +20,7 @@ const slug = (text) => String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').re
 
 export default function Website() {
   return <div className="stack website-editor">
-    <p className="muted">Change the words, products, prices and terms on the public website. Products and prices here are also what the till sells.</p>
+    <p className="muted">Change the words, products, prices and terms on the public website. To add a product or change its price, barcode or stock, use Products.</p>
     <EditorGate purpose="Only the owner can change the public website.">{(user) => <Editor user={user} />}</EditorGate>
   </div>
 }
@@ -30,12 +30,13 @@ function Editor({ user }) {
   const [tab, setTab] = useState('shop')
   const [content, setContent] = useState(null)
   const [products, setProducts] = useState(null)
+  const [loaded, setLoaded] = useState(null) // the catalogue as it was when this page opened
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
     Promise.all([getDoc(doc(db, 'site', 'content')), getDoc(doc(db, 'site', 'catalog'))])
-      .then(([c, k]) => { setContent(mergeContent(c.exists() ? c.data() : null)); setProducts(mergeCatalog(k.exists() ? k.data() : null)) })
+      .then(([c, k]) => { setContent(mergeContent(c.exists() ? c.data() : null)); const list = mergeCatalog(k.exists() ? k.data() : null); setProducts(list); setLoaded(list) })
       .catch(() => toast('Could not load the website content. Check your internet and reload.', 'error'))
   }, [toast])
 
@@ -59,8 +60,9 @@ function Editor({ user }) {
     try {
       await Promise.all([
         setDoc(doc(db, 'site', 'content'), { shop: content.shop, home: content.home, checkout: content.checkout, terms: content.terms, ...stamp }),
-        setDoc(doc(db, 'site', 'catalog'), { products: products.map(cleanProduct), ...stamp }),
+        saveCatalogChanges(loaded, products, stamp),
       ])
+      setLoaded(products)
       setDirty(false)
       toast('Saved. The website shows the change now (visitors may need to reload).')
     } catch {
@@ -83,6 +85,25 @@ function Editor({ user }) {
     {tab === 'checkout' ? <CheckoutTab checkout={content.checkout} onChange={(key, value) => edit('checkout', key, value)} /> : null}
     {tab === 'terms' ? <TermsTab terms={content.terms} onChange={(terms) => { setContent({ ...content, terms }); setDirty(true) }} /> : null}
   </>
+}
+
+// Saves only the products changed on this page, on top of the latest catalogue, so products added or edited
+// meanwhile on the Products page (or another computer) are kept.
+async function saveCatalogChanges(before, after, stamp) {
+  const key = (product) => JSON.stringify(cleanProduct(product))
+  const was = new Map(before.map((product) => [product.id, key(product)]))
+  const changed = after.filter((product) => was.get(product.id) !== key(product))
+  const removed = new Set(before.filter((product) => !after.some((item) => item.id === product.id)).map((product) => product.id))
+  if (!changed.length && !removed.size) return
+  await runTransaction(db, async (tx) => {
+    const ref = doc(db, 'site', 'catalog')
+    const snap = await tx.get(ref)
+    const latest = mergeCatalog(snap.exists() ? snap.data() : null)
+    const edits = new Map(changed.map((product) => [product.id, cleanProduct(product)]))
+    const next = latest.filter((product) => !removed.has(product.id)).map((product) => edits.get(product.id) || product)
+    for (const product of edits.values()) if (!next.some((item) => item.id === product.id)) next.push(product)
+    tx.set(ref, { products: next.map(cleanProduct), ...stamp })
+  })
 }
 
 function TextField({ label, hint, value, onChange, multiline = false, ...rest }) {
