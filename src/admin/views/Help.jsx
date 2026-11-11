@@ -61,6 +61,7 @@ const TOPICS = [
       'Open Till setup and follow the three steps: 1 Receipt printer, 2 Cash drawer, 3 Customer screen. Each step has a test and asks whether it worked. Answer honestly: a wrong answer shows the fix.',
       'Printer test: the page has a row of numbers that must fill exactly one line, the text styles, a sample receipt and a paper cut. Cut off or wrapped numbers = wrong paper width. Strange symbols = the printer is not in ESC/POS mode. Nothing = check power, paper, cable or IP address.',
       'Customer screen: plug it in as a second monitor and set Windows to Extend (Windows key + P → Extend). The till app puts the sale on the touch screen and the customer view on the other one by itself. If it guesses wrong, open Till setup → Customer screen, press Show numbers and choose the right screen.',
+      'The customer screen fills its monitor completely, with no buttons and no Windows taskbar (till app 1.7.0 or newer). On the wrong monitor? Press Swap screens on the POS (or Ctrl+Shift+S): it is remembered. Ctrl+Shift+D hides or shows it.',
       'The customer sees only what is being sold to them and the amount to pay. When nobody is buying, it shows a slideshow of products in stock.',
       'The drawer opens by itself after a cash sale or cash refund. To open it without a sale, press Open drawer on the POS page and give the reason. Every opening is recorded.',
       'No till app? Receipts print through the print window: choose the printer, paper 80 mm, margins None, no headers and footers. The drawer then opens with its key.',

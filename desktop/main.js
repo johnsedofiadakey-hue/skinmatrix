@@ -146,19 +146,26 @@ function createMainWindow() {
   mainWindow.loadURL(config.url)
 }
 
-// The customer screen: a normal window with minimise, maximise and close, opened maximised on the customer's
-// monitor. If the shop drags it (or the till) to the other monitor, that is remembered and used from then on.
-// After it is clicked or moved, the keyboard goes back to the till so barcode scans keep landing in the POS.
-// With one monitor it opens only when asked for (Till setup → Preview) and never covers the till by itself.
+// The customer screen covers the customer's monitor completely: no title bar, no buttons, no Windows taskbar,
+// and it stays on top of the taskbar even while the till has the keyboard. It is moved with Swap screens (POS
+// header, Till setup, or Ctrl+Shift+S), and shown or hidden with Ctrl+Shift+D. After it is touched, the keyboard
+// goes back to the till so barcode scans keep landing in the POS.
+// With one monitor it opens only when asked for (Till setup → Preview), as a normal window that never covers the till.
 function placeOn(win, display) {
   if (!win || win.isDestroyed() || !display) return
   if (win.isMinimized()) win.restore()
-  if (!sameDisplay(win, display)) {
-    if (win.isFullScreen()) win.setFullScreen(false)
-    if (win.isMaximized()) win.unmaximize()
-    win.setBounds(display.workArea)
+  if (win.kind === 'preview') {
+    if (!sameDisplay(win, display)) win.setBounds(display.workArea)
+    win.maximize()
+    return
   }
-  win.maximize()
+  if (!sameDisplay(win, display) || !win.isFullScreen()) {
+    if (win.isFullScreen()) win.setFullScreen(false)
+    win.setBounds(display.bounds)
+    win.setFullScreen(true)
+  }
+  // Above the taskbar too (Windows otherwise draws its taskbar over a full-screen window that is not in use).
+  win.setAlwaysOnTop(true, 'screen-saver')
 }
 
 // The shop moved a window (dragged it, or Windows key + Shift + arrow). Whatever monitor the customer window is
@@ -192,10 +199,11 @@ const whilePlacing = (work) => { placing = true; try { work() } finally { setTim
 function createDisplayWindow(target) {
   const preview = !target
   const win = new BrowserWindow({
-    ...(target ? target.workArea : { width: 1024, height: 640 }),
+    ...(target ? target.bounds : { width: 1024, height: 640 }),
     show: false, backgroundColor: BACKGROUND, autoHideMenuBar: true,
     title: preview ? 'Customer screen (preview) · SkinMatrix' : 'SkinMatrix · Customer screen',
-    frame: true, minimizable: true, maximizable: true, closable: true,
+    // The real customer screen: no frame, no taskbar button, full screen. The one-monitor preview: a normal window.
+    frame: preview, skipTaskbar: !preview, minimizable: preview, maximizable: preview, resizable: preview, closable: true, fullscreenable: true,
     icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: webPreferences(),
   })
@@ -214,6 +222,16 @@ function createDisplayWindow(target) {
   const backToTill = (delay) => { clearTimeout(refocus); refocus = setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed() && !win.isDestroyed() && win.isFocused()) mainWindow.focus() }, delay) }
   win.on('focus', () => backToTill(5000))
   for (const event of ['moved', 'maximize', 'restore']) win.on(event, () => { if (!placing) { rememberPlacement('customer'); backToTill(700) } })
+  // Something took it out of full screen or minimised it (a Windows shortcut): cover the monitor again.
+  if (!preview) {
+    const cover = () => setTimeout(() => {
+      if (placing || win.isDestroyed()) return
+      const { customer } = screens()
+      if (customer) whilePlacing(() => { placeOn(win, customer); win.showInactive() })
+    }, 600)
+    win.on('leave-full-screen', cover)
+    win.on('minimize', cover)
+  }
   win.on('closed', () => { if (displayWindow === win) displayWindow = null })
   win.loadURL(url)
   return win

@@ -1,7 +1,7 @@
 {
   "name": "skinmatrix-till",
   "productName": "SkinMatrix Till",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "SkinMatrix till: the shop system full screen, receipts straight to the printer, cash drawer and customer screen",
   "private": true,
   "main": "main.js",
