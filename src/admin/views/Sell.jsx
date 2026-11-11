@@ -11,6 +11,7 @@ import { discountNeedsApproval } from '../../../functions/src/core/sale.js'
 import { taxBreakdown } from '../../../functions/src/core/tax.js'
 import { isConnectionProblem } from '../live/offlineSales.js'
 import { tillWarnings } from '../live/risks.js'
+import { ProductForm } from '../pos/ProductForm.jsx'
 import { OfflineSales } from '../components/offline.jsx'
 import { Dialog, Icon } from '../components/ui.jsx'
 import { beep, CameraScanner, useHardwareScanner } from '../components/scanner.jsx'
@@ -52,7 +53,7 @@ function quickCash(total) {
 const productDetail = (product) => [product.brand, product.size].filter(Boolean).join(' · ')
 
 export default function Sell({ onMenu }) {
-  const { products, catalogLoaded, call, toast, role, shop, online, me, settings, offlineSales, queueSale, signOut, backup, clockSkew } = useOps()
+  const { products, catalogLoaded, call, toast, role, shop, online, me, settings, offlineSales, queueSale, signOut, backup, clockSkew, can } = useOps()
   const now = useNow(60000)
   const till = useTill()
   const held = useHeld()
@@ -224,10 +225,27 @@ export default function Sell({ onMenu }) {
   const scan = useCallback((raw) => {
     const code = String(raw).trim().toUpperCase()
     const product = byCode.get(code)
-    if (!product) { beep(false); toast(`No product has the code ${raw}. Link it in Products.`, 'error'); return }
+    if (!product) {
+      // A box the shop has never sold: a manager can add it right here, and it goes straight into the sale.
+      if (can('products') && online) { beep(); setNewCode(String(raw).trim()); setPanel('newProduct'); return }
+      beep(false)
+      toast(can('products') ? `No product has the code ${raw}. Adding products needs the internet.` : `No product has the code ${raw}. Ask a manager to add it.`, 'error')
+      return
+    }
     if (done) { reset(); setTimeout(() => add(product), 0); return }
     add(product)
-  }, [add, byCode, toast, done]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [add, byCode, toast, done, can, online]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // After adding a new product from a scan: put it in the sale as soon as it (with its price and stock) arrives.
+  const [newCode, setNewCode] = useState('')
+  const pendingAdd = useRef(null) // { id, until }
+  useEffect(() => {
+    const wanted = pendingAdd.current
+    if (!wanted) return
+    const product = products.find((item) => item.id === wanted.id)
+    if (product?.price && onShelf(product, Date.now()) > 0) { pendingAdd.current = null; add(product, { sound: false }); return }
+    if (Date.now() > wanted.until) { pendingAdd.current = null; if (product) toast(`${product.name} was added, but it has no price or stock yet, so it is not in this sale.`, 'error') }
+  }, [products, onShelf, add, toast])
   useHardwareScanner(scan, step === 'sale' && !panel)
 
   useEffect(() => {
@@ -437,6 +455,8 @@ export default function Sell({ onMenu }) {
     {panel === 'held' ? <HeldDialog held={held} products={products} onResume={resume} onDrop={dropHeld} onClose={() => setPanel(null)} hasSale={lines.length > 0} /> : null}
     {panel === 'noSale' ? <NoSaleDialog onClose={() => setPanel(null)} /> : null}
     {panel === 'offline' ? <Dialog title="Sales waiting to send" onClose={() => setPanel(null)} sheet><OfflineSales /></Dialog> : null}
+    {panel === 'newProduct' ? <ProductForm barcode={newCode} onClose={() => { setPanel(null); setNewCode('') }}
+      onSaved={(id) => { if (id) pendingAdd.current = { id, until: Date.now() + 15000 } }} /> : null}
     {panel === 'camera' ? <CameraScanner onClose={() => setPanel(null)} onScan={(code) => { setPanel(null); scan(code) }} /> : null}
     {panel === 'user' ? <UserDialog me={me} online={online} pending={pending} onSignOut={signOut} onClose={() => setPanel(null)} /> : null}
   </div>

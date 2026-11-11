@@ -1,11 +1,13 @@
 // Receive stock, the quick way: scan each box (or search), type how many and the expiry month, save.
-// Scanning the same product again adds one more. Batch numbers, suppliers and invoices are optional extras
+// Scanning the same product again adds one more. A barcode the shop does not know opens "New product" with the
+// barcode filled in; its stock is entered there, and scanning carries on here afterwards. Batch numbers, suppliers and invoices are optional extras
 // in Stock → Receive delivery.
 import { useCallback, useState } from 'react'
 import { useOps } from '../hooks.js'
 import { formatMoney, parseCedis } from '../lib/money.js'
 import { Dialog, Icon } from '../components/ui.jsx'
 import { beep, CameraScanner, useHardwareScanner } from '../components/scanner.jsx'
+import { ProductForm } from './ProductForm.jsx'
 
 const toCedis = (pesewas) => (Number.isInteger(pesewas) ? (pesewas / 100).toFixed(2) : '')
 const lastDayOf = (month) => {
@@ -20,6 +22,7 @@ export function ReceiveStock({ onClose }) {
   const [query, setQuery] = useState('')
   const [camera, setCamera] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [adding, setAdding] = useState(null) // a scanned barcode the shop does not know yet
   const seeCost = can('costs')
 
   const addProduct = useCallback((product) => {
@@ -36,10 +39,12 @@ export function ReceiveStock({ onClose }) {
   }, [products])
   const scan = useCallback((code) => {
     const product = byCode(code)
-    if (!product) { beep(false); toast(`No product has the barcode ${code}. Add it first with Add a product.`, 'error'); return }
-    addProduct(product)
-  }, [byCode, addProduct, toast])
-  useHardwareScanner(scan, !camera)
+    if (product) { addProduct(product); return }
+    if (!can('products')) { beep(false); toast(`No product has the barcode ${code}. Ask a manager to add it in Products.`, 'error'); return }
+    beep()
+    setAdding(String(code).trim())
+  }, [byCode, addProduct, toast, can])
+  useHardwareScanner(scan, !camera && !adding)
 
   const needle = query.trim().toLowerCase()
   const matches = needle ? products.filter((product) => `${product.name} ${product.brand} ${product.setup.barcode || ''}`.toLowerCase().includes(needle)).slice(0, 6) : []
@@ -72,7 +77,8 @@ export function ReceiveStock({ onClose }) {
     if (result) onClose()
   }
 
-  return <Dialog title="Receive stock" onClose={onClose} sheet wide>
+  return <>
+  <Dialog title="Receive stock" onClose={onClose} sheet wide>
     <div className="stack receive">
       <div className="receive-scan">
         <Icon name="search" size={20} />
@@ -83,6 +89,7 @@ export function ReceiveStock({ onClose }) {
             const exact = byCode(query)
             if (exact) addProduct(exact)
             else if (matches.length === 1) addProduct(matches[0])
+            else if (!matches.length && /^\d{6,14}$/.test(query.trim())) { scan(query); setQuery('') }
           }} />
         <button type="button" className="btn secondary" onClick={() => setCamera(true)}><Icon name="camera" size={16} /> Camera</button>
       </div>
@@ -105,7 +112,7 @@ export function ReceiveStock({ onClose }) {
       </li>)}</ul> : <div className="receive-empty">
         <Icon name="delivery" size={34} />
         <b>Scan the first box</b>
-        <span className="muted small">Each scan adds one. Or type a name above and tap the product.</span>
+        <span className="muted small">Each scan adds one. Or type a name above and tap the product. A new barcode opens a form to add the product.</span>
       </div>}
 
       {problem ? <p className="warn-text small">{problem}</p> : null}
@@ -118,4 +125,7 @@ export function ReceiveStock({ onClose }) {
     </div>
     {camera ? <CameraScanner onClose={() => setCamera(false)} onScan={(code) => { setCamera(false); scan(code) }} /> : null}
   </Dialog>
+  {/* Outside the Receive dialog, so Escape closes only this one. */}
+  {adding ? <ProductForm barcode={adding} onClose={() => setAdding(null)} /> : null}
+  </>
 }

@@ -52,7 +52,12 @@ const TOPICS = [
       'Test: open Sell and scan any product. You hear a short beep and it goes into the basket.',
       'If nothing happens, click on an empty part of the page first, then scan again.',
       'No scanner? Press Scan on the Sell page to use the phone or tablet camera. Allow camera access when asked.',
-      'A product that does not scan needs its barcode saved once: Products → tap it → scan.',
+      'Selling: scan the box, or type part of the name or code in the search box on the POS and tap the product.',
+      'Adding a new product: on the Products page, scan the box. If the shop does not have it, “New product” opens with the barcode filled in (and often the name, brand and size, looked up online). Add the price and how many you have, then Add product.',
+      'Scanning a box the shop has opens that product, to change the price or receive stock.',
+      'A new box at the till during a sale: a manager or owner can scan it and add the product right there; it goes straight into the sale. Cashiers see a message to ask a manager.',
+      'Receive stock: scan each box, type how many and the expiry month. A box the shop does not know opens “New product”.',
+      'A product with no barcode: Products → tap it → click the barcode box → scan, or leave it empty and sell it by name.',
     ],
   },
   {

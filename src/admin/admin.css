@@ -538,3 +538,6 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
 .callout.good { background: var(--green-bg); color: var(--green); }
 .update-bar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
 .update-bar > span { display: block; height: 100%; background: var(--green); transition: width 0.4s ease; }
+
+/* Products: scan hint */
+.products-scan-hint { background: var(--accent-soft); color: var(--ink-2); }
