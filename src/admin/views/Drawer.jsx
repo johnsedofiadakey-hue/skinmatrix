@@ -8,6 +8,9 @@ import { Card, Dialog, Empty, Icon, Money, Segmented, Stat } from '../components
 import { Guide } from '../components/guide.jsx'
 import { OfflineSales } from '../components/offline.jsx'
 import { fmtFull, fmtTime } from '../components/format.js'
+import { drawerReportOps } from '../till/escpos.js'
+import { useSlipPrinter } from '../till/printing.jsx'
+import { NoSaleDialog } from '../till/TillBar.jsx'
 
 // The cashier's own cash drawer: open with a float, record cash in or out, count and close at the end.
 export default function Drawer() {
@@ -53,8 +56,13 @@ function OpenDrawer() {
 }
 
 function OpenShift({ shift, showTotals, unsent, onClosed }) {
+  const { shop } = useOps()
   const [moving, setMoving] = useState(null) // 'in' | 'out'
   const [closing, setClosing] = useState(false)
+  const [noSale, setNoSale] = useState(false)
+  const slips = useSlipPrinter()
+  // X reading: a printout of the drawer so far, without closing it. Staff count blind, so theirs leaves out the expected cash.
+  const printX = () => slips.print(drawerReportOps({ shop, shift, title: 'X READING', at: Date.now(), showExpected: showTotals }))
   return <>
     <div className="stat-grid">
       <Stat label="Opened" value={fmtTime(shift.openedAt)} sub={`Float ${formatMoney(shift.float)}`} />
@@ -67,10 +75,16 @@ function OpenShift({ shift, showTotals, unsent, onClosed }) {
         <b>{move.kind === 'out' ? '−' : '+'}{formatMoney(move.amount)}</b>
       </li>)}</ul> : <p className="muted small">Nothing yet. Record change from the bank, a paid delivery rider and similar here.</p>}
     </Card>
+    <div className="row">
+      <button type="button" className="btn secondary" onClick={printX}><Icon name="printer" size={16} /> Print X reading</button>
+      <button type="button" className="btn secondary" onClick={() => setNoSale(true)}><Icon name="drawer" size={16} /> Open drawer (no sale)</button>
+    </div>
     <button type="button" className="btn primary block large" onClick={() => setClosing(true)} disabled={unsent > 0}>Close drawer and count</button>
     {unsent ? <p className="warn-text small">{unsent} offline sale(s) from this drawer are not sent yet. Close the drawer once they are sent.</p> : null}
     {moving ? <MoveDialog kind={moving} onClose={() => setMoving(null)} /> : null}
     {closing ? <CloseDialog shift={shift} onClose={() => setClosing(false)} onClosed={(result) => { setClosing(false); onClosed(result) }} /> : null}
+    {noSale ? <NoSaleDialog onClose={() => setNoSale(false)} /> : null}
+    {slips.area}
   </>
 }
 
@@ -139,6 +153,8 @@ function CloseDialog({ shift, forName, onClose, onClosed }) {
 }
 
 function ClosedResult({ shift, onDone }) {
+  const { shop } = useOps()
+  const slips = useSlipPrinter()
   const tone = shift.difference === 0 ? 'good-text' : 'bad-text'
   return <Card title="Drawer closed">
     <div className="stack">
@@ -152,8 +168,12 @@ function ClosedResult({ shift, onDone }) {
         <div><span>Counted</span><span>{formatMoney(shift.counted)}</span></div>
         <div className={tone}><span>{shift.difference === 0 ? 'Matches' : shift.difference > 0 ? 'Over' : 'Short'}</span><span>{formatMoney(shift.difference, { signed: true })}</span></div>
       </div>
-      <button type="button" className="btn primary" onClick={onDone}>Done</button>
+      <div className="row">
+        <button type="button" className="btn secondary" onClick={() => slips.print(drawerReportOps({ shop, shift, title: 'DRAWER CLOSED', at: Date.now(), showExpected: true }))}><Icon name="printer" size={16} /> Print closing slip</button>
+        <button type="button" className="btn primary" onClick={onDone}>Done</button>
+      </div>
     </div>
+    {slips.area}
   </Card>
 }
 

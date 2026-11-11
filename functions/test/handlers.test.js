@@ -8,7 +8,11 @@ import { createHmac } from 'node:crypto'
 import * as h from '../src/handlers.js'
 import * as shifts from '../src/shifts.js'
 import * as settings from '../src/settings.js'
+import * as register from '../src/register.js'
+import * as productsApi from '../src/products.js'
 import * as web from '../src/web.js'
+import * as momo from '../src/momo.js'
+import { cleanMomoNumber, maskMomoNumber, networkOf } from '../src/core/momo.js'
 
 const PROJECT = 'demo-skinmatrix'
 const DAY = 24 * 60 * 60 * 1000
@@ -151,6 +155,27 @@ describe('voids and returns', () => {
   })
 })
 
+describe('customer records', () => {
+  const customerDoc = async () => (await db.doc('customers/233241234567').get()).data()
+  it('remembers a customer by phone, adds up visits and takes back cancels and refunds', async () => {
+    await sell(STAFF, [{ productId: 'cream', quantity: 1 }], { customer: { name: 'Esi Mensah', phone: '024 123 4567' } })
+    const { sale } = await sell(STAFF, [{ productId: 'serum', quantity: 2 }], { customer: { name: '', phone: '+233 24 123 4567' } }, NOW + 1000)
+    let record = await customerDoc()
+    expect(record).toMatchObject({ name: 'Esi Mensah', phone: '024 123 4567', visits: 2, firstVisit: NOW, lastSaleId: sale.id })
+    const spent = record.totalSpent
+    expect(spent).toBe(30000 + sale.total)
+    await h.returnItems(ctx(MANAGER), { saleId: sale.id, lines: [{ productId: 'serum', quantity: 1 }], condition: 'resaleable', refundMethod: 'cash', reason: 'Changed mind' })
+    record = await customerDoc()
+    expect(record.totalSpent).toBe(spent - sale.total / 2)
+    await h.voidSale(ctx(MANAGER), { saleId: sale.id, reason: 'Wrong item' })
+    record = await customerDoc()
+    expect(record).toMatchObject({ visits: 1, totalSpent: 30000 })
+    // No phone: nothing is recorded.
+    await sell(STAFF, [{ productId: 'cream', quantity: 1 }], { customer: { name: 'Walk-in' } })
+    expect((await db.collection('customers').get()).size).toBe(1)
+  })
+})
+
 describe('website orders', () => {
   const order = (id, lines, status = 'new') => db.doc(`orders/${id}`).set({ ref: id, channel: 'website', status, customer: { name: 'Esi', phone: '024 123 4567', email: '' }, fulfilment: { method: 'delivery', address: 'East Legon', notes: '' }, lines, subtotal: 0, deliveryFee: null, total: 0, payment: { method: 'pay_later', status: 'unpaid', reference: null }, createdAt: new Date(NOW) })
 
@@ -217,6 +242,21 @@ describe('staff accounts', () => {
     await expectRule(sell(uid, [{ productId: 'cream', quantity: 1 }]), 'account_disabled')
     await expectRule(h.updateStaff(ctx(OWNER), { uid: OWNER, role: 'staff' }), 'self_change')
     await expectRule(h.createStaff(ctx(OWNER), { name: 'Yaw 2', email: 'yaw@test.dev', role: 'staff' }), 'email_taken')
+  })
+
+  it('signs staff in with a username and lets the owner reset it', async () => {
+    const { uid, password } = await h.createStaff(ctx(OWNER), { name: 'Kofi', username: ' Kofi ', password: 'kofi-pass', role: 'staff' })
+    expect(password).toBeNull()
+    expect((await auth.getUser(uid)).email).toBe('kofi@staff.skinmatrixgh.com')
+    expect((await db.doc(`staff/${uid}`).get()).data().username).toBe('kofi')
+    await expectRule(h.createStaff(ctx(OWNER), { name: 'Kofi B', username: 'kofi', role: 'staff' }), 'username_taken')
+    await expectRule(h.createStaff(ctx(OWNER), { name: 'Bad', username: '1x', role: 'staff' }), 'bad_username')
+    await expectRule(h.createStaff(ctx(OWNER), { name: 'Short', username: 'esi', password: '123', role: 'staff' }), 'bad_password')
+    await expectRule(h.setStaffLogin(ctx(MANAGER), { uid, password: 'another1' }), 'forbidden')
+    await expectRule(h.setStaffLogin(ctx(OWNER), { uid: OWNER, password: 'another1' }), 'self_change')
+    await h.setStaffLogin(ctx(OWNER), { uid, username: 'kofi.a', password: 'another1' })
+    expect((await auth.getUser(uid)).email).toBe('kofi.a@staff.skinmatrixgh.com')
+    expect((await db.doc(`staff/${uid}`).get()).data()).toMatchObject({ username: 'kofi.a', email: 'kofi.a@staff.skinmatrixgh.com' })
   })
 
   it('lets an existing website editor claim the shop only when there is no owner', async () => {
@@ -294,6 +334,39 @@ describe('offline sales and taxes', () => {
     const { sale } = await sell(STAFF, [{ productId: 'cream', quantity: 1 }])
     expect(sale.tax).toMatchObject({ tin: 'P0012345678', net: 25000, nhil: 625, getfund: 625, vat: 3750 })
     expect(sale.tax.net + sale.tax.vat + sale.tax.nhil + sale.tax.getfund).toBe(sale.total)
+  })
+})
+
+describe('cash register: no sale and Z report', () => {
+  it('logs a drawer opened without a sale, once per request, even when sent later', async () => {
+    const requestId = rid()
+    await expectRule(register.recordNoSale(ctx(STAFF), { requestId, reason: '' }), 'reason_required')
+    await register.recordNoSale(ctx(STAFF), { requestId, reason: 'Change for a customer' })
+    await register.recordNoSale(ctx(STAFF), { requestId, reason: 'Change for a customer' })
+    await register.recordNoSale(ctx(STAFF), { requestId: rid(), reason: 'Checked a note', at: NOW - 60000 })
+    expect((await shiftOf(STAFF)).noSales).toBe(2)
+    await expectRule(register.recordNoSale(ctx(STAFF), { requestId: rid(), reason: 'Too old', at: NOW - 8 * DAY }), 'bad_time')
+    const logged = await db.collection('audit').where('type', '==', 'drawer').get()
+    expect(logged.size).toBe(2)
+  })
+
+  it('closes the day once, with totals by payment, refunds and every drawer', async () => {
+    const { sale } = await sell(STAFF, [{ productId: 'cream', quantity: 1 }], { payment: { method: 'cash', received: 30000 } })
+    await sell(STAFF, [{ productId: 'serum', quantity: 1 }], { payment: { method: 'momo', received: 20000, reference: 'MM5550001', network: 'MTN' } })
+    const cancelled = await sell(MANAGER, [{ productId: 'serum', quantity: 1 }])
+    await h.voidSale(ctx(MANAGER), { saleId: cancelled.sale.id, reason: 'Wrong item' })
+    await h.returnItems(ctx(MANAGER), { saleId: sale.id, lines: [{ productId: 'cream', quantity: 1 }], condition: 'resaleable', refundMethod: 'cash', reason: 'Changed mind' })
+    await expectRule(register.closeDay(ctx(STAFF), {}), 'forbidden')
+    await expectRule(register.closeDay(ctx(MANAGER), {}), 'drawers_open')
+    const { report } = await register.closeDay(ctx(MANAGER), { allowOpenDrawers: true, note: 'Tills left open for the evening' })
+    expect(report).toMatchObject({ number: 'Z0001', day: '2026-09-26', count: 2, gross: 50000, refunds: 30000, net: 20000, voidedCount: 1, firstSale: 1, lastSale: 3 })
+    expect(report.byMethod).toEqual({ cash: 0, momo: 20000, card: 0 })
+    expect(report.drawers).toHaveLength(3)
+    expect(report.drawers.every((drawer) => drawer.status === 'open')).toBe(true)
+    await expectRule(register.closeDay(ctx(OWNER), { allowOpenDrawers: true }), 'day_closed')
+    await expectRule(register.closeDay(ctx(OWNER), { day: '2026-09-27' }), 'bad_day')
+    const next = await register.closeDay(ctx(OWNER), { day: '2026-09-25' })
+    expect(next.report).toMatchObject({ number: 'Z0002', count: 0, net: 0 })
   })
 })
 
@@ -377,5 +450,143 @@ describe('website checkout on the server', () => {
     const log = (await db.collection('smsLog').get()).docs.map((doc) => doc.data())
     expect(log.filter((row) => row.ok)).toHaveLength(2)
     expect(log.find((row) => !row.ok).error).toBe('network down')
+  })
+})
+
+describe('end-of-day text to the owner', () => {
+  it('texts takings by method and low stock when the day is closed, only when turned on', async () => {
+    const sent = []
+    const fetcher = async (url, init) => { sent.push(JSON.parse(init.body)); return { ok: true, status: 200, json: async () => ({ status: 'success', code: '2000' }) } }
+    const withSms = (uid) => ({ ...ctx(uid), secrets: { smsKey: 'mnotify-key-0000000' }, fetch: fetcher })
+    await sell(STAFF, [{ productId: 'cream', quantity: 4 }])
+    await sell(STAFF, [{ productId: 'serum', quantity: 1 }], { payment: { method: 'momo', received: 20000, reference: 'MM123456', network: 'MTN' } })
+    // Off: nothing is sent.
+    await settings.saveShopSettings(ctx(OWNER), { sms: { enabled: true, daySummary: false, ownerPhone: '024 765 4321' } })
+    await register.closeDay(withSms(MANAGER), { day: '2026-09-25' })
+    expect(sent).toHaveLength(0)
+    await settings.saveShopSettings(ctx(OWNER), { sms: { enabled: true, daySummary: true, ownerPhone: '0247654321' } })
+    const { report } = await register.closeDay(withSms(MANAGER), { allowOpenDrawers: true })
+    expect(sent).toHaveLength(1)
+    expect(sent[0].recipient).toEqual(['0247654321'])
+    expect(sent[0].message).toContain(`closed (${report.number})`)
+    expect(sent[0].message).toContain('Takings GHS 1400.00 from 2 sales')
+    expect(sent[0].message).toContain('Cash 1200.00, MoMo 200.00')
+    expect(sent[0].message).toContain('Moisturizing Cream (1)')
+  })
+})
+
+describe('one product form', () => {
+  it('adds a product with barcode, price and opening stock in one go, then edits it', async () => {
+    await expectRule(productsApi.saveProduct(ctx(STAFF), { name: 'Toner', price: 9000 }), 'forbidden')
+    const { productId } = await productsApi.saveProduct(ctx(OWNER), {
+      name: 'Glow Toner', brand: 'SkinMatrix', size: '150 ml', category: 'Skincare', price: 9000, visible: false,
+      barcode: '5012345678900', cost: 4000, opening: { quantity: 12, expiresOn: '2028-01-31' },
+    })
+    const catalog = (await db.doc('site/catalog').get()).data().products
+    expect(catalog.find((product) => product.id === productId)).toMatchObject({ name: 'Glow Toner', price: 9000, visible: false })
+    expect(catalog).toHaveLength(products.length + 1)
+    expect((await db.doc(`catalogOps/${productId}`).get()).data()).toMatchObject({ barcode: '5012345678900', tracksExpiry: true })
+    expect(await stock(productId)).toBe(12)
+    await sell(STAFF, [{ productId, quantity: 2 }])
+    expect(await stock(productId)).toBe(10)
+    await productsApi.saveProduct(ctx(OWNER), { id: productId, name: 'Glow Toner 2', price: 9500, barcode: '5012345678900', visible: true })
+    const edited = (await db.doc('site/catalog').get()).data().products.find((product) => product.id === productId)
+    expect(edited).toMatchObject({ name: 'Glow Toner 2', price: 9500, visible: true })
+    expect(await stock(productId)).toBe(10)
+    await expectRule(productsApi.saveProduct(ctx(OWNER), { name: 'Copy', price: 100, barcode: '5012345678900' }), 'duplicate_barcode')
+    await expectRule(productsApi.saveProduct(ctx(OWNER), { name: 'No expiry given', price: 100, opening: { quantity: 3 } }), 'expiry_required')
+  })
+
+  it('deletes a product only when it has no stock, owner only, and frees its barcode', async () => {
+    const stocked = await productsApi.saveProduct(ctx(OWNER), { name: 'Stocked Mist', price: 5000, barcode: '4006381333931', tracksExpiry: false, opening: { quantity: 2 } })
+    await expectRule(productsApi.deleteProduct(ctx(OWNER), { id: stocked.productId }), 'has_stock')
+
+    const empty = await productsApi.saveProduct(ctx(OWNER), { name: 'Duplicate Gel', price: 3000, barcode: '5000158062528', cost: 1000 })
+    await expectRule(productsApi.deleteProduct(ctx(STAFF), { id: empty.productId }), 'forbidden')
+    await sell(STAFF, [{ productId: stocked.productId, quantity: 1 }]) // history must survive deleting other products
+    expect(await productsApi.deleteProduct(ctx(OWNER), { id: empty.productId })).toEqual({ deleted: empty.productId })
+    const catalog = (await db.doc('site/catalog').get()).data().products
+    expect(catalog.some((product) => product.id === empty.productId)).toBe(false)
+    expect((await db.doc(`catalogOps/${empty.productId}`).get()).exists).toBe(false)
+    expect((await db.doc(`catalogCosts/${empty.productId}`).get()).exists).toBe(false)
+    await expectRule(productsApi.deleteProduct(ctx(OWNER), { id: empty.productId }), 'unknown_product')
+    // The barcode can now go on another product.
+    await productsApi.saveProduct(ctx(OWNER), { name: 'Real Gel', price: 3000, barcode: '5000158062528' })
+  })
+})
+
+
+describe('MoMo prompts at the till', () => {
+  // A pretend Paystack: the charge waits for the customer, then verify says whatever `state.verify` is.
+  const fakePaystack = (state) => async (url, init) => {
+    state.calls.push({ url, body: init?.body ? JSON.parse(init.body) : null })
+    if (url.endsWith('/charge')) return { ok: true, json: async () => ({ status: true, message: 'Charge attempted', data: { status: state.charge || 'pay_offline', display_text: 'Please complete authorization process on your mobile number' } }) }
+    if (url.endsWith('/charge/submit_otp')) return { ok: true, json: async () => ({ status: true, data: { status: 'pay_offline', display_text: 'Approve on your phone' } }) }
+    return { ok: true, json: async () => ({ status: true, data: { status: state.verify || 'ongoing', amount: state.amount, currency: 'GHS', gateway_response: state.reason || '' } }) }
+  }
+  const promptCtx = (uid, state, now = NOW) => ({ ...ctx(uid, now), secrets: { paystack: 'sk_test_secret' }, fetch: fakePaystack(state) })
+  const start = (state, extra = {}) => momo.startMomoPrompt(promptCtx(STAFF, state), { requestId: state.requestId, lines: [{ productId: 'cream', quantity: 2 }], phone: '055 123 4987', ...extra })
+
+  it('reads Ghana numbers and networks', () => {
+    expect(cleanMomoNumber('+233 55 123 4987')).toBe('0551234987')
+    expect(cleanMomoNumber('12345')).toBe('')
+    expect([networkOf('0241234567'), networkOf('0201234567'), networkOf('0271234567'), networkOf('0311234567')]).toEqual(['MTN', 'Telecel', 'AT', ''])
+    expect(maskMomoNumber('0551234987')).toBe('055 *** 4987')
+  })
+
+  it('charges the server price, then saves the sale once when the customer approves', async () => {
+    const state = { calls: [], requestId: rid(), amount: 60000 }
+    await expectRule(momo.startMomoPrompt(ctx(STAFF), { requestId: state.requestId, lines: [{ productId: 'cream', quantity: 2 }], phone: '0551234987' }), 'prompt_off')
+    await expectRule(start(state, { phone: '123' }), 'bad_phone')
+    const started = await start(state)
+    expect(started).toMatchObject({ status: 'waiting', phone: '055 *** 4987', network: 'MTN', amount: 60000 })
+    expect(state.calls[0].body).toMatchObject({ amount: 60000, currency: 'GHS', mobile_money: { phone: '0551234987', provider: 'mtn' } })
+    expect((await momo.checkMomoPrompt(promptCtx(STAFF, state), { reference: started.reference })).status).toBe('waiting')
+    await expectRule(momo.checkMomoPrompt(promptCtx('nobody', state), { reference: started.reference }), 'not_staff')
+    state.verify = 'success'
+    const paid = await momo.checkMomoPrompt(promptCtx(STAFF, state), { reference: started.reference })
+    expect(paid.status).toBe('paid')
+    expect(paid.sale).toMatchObject({ total: 60000, payment: { method: 'momo', reference: started.reference, network: 'MTN', prompt: true, phone: '055 *** 4987', change: 0 } })
+    expect(await stock('cream')).toBe(3)
+    // The webhook arriving later changes nothing.
+    const body = Buffer.from(JSON.stringify({ event: 'charge.success', data: { status: 'success', reference: started.reference, amount: 60000, currency: 'GHS' } }))
+    expect(await web.handlePaystackWebhook({ db, now: NOW, secrets: { paystack: 'sk_test_secret' } }, { rawBody: body, signature: createHmac('sha512', 'sk_test_secret').update(body).digest('hex') })).toBe(200)
+    expect((await db.collection('sales').get()).size).toBe(1)
+    expect(await stock('cream')).toBe(3)
+  })
+
+  it('saves the sale from the webhook alone, and reports a declined prompt', async () => {
+    const state = { calls: [], requestId: rid() }
+    const started = await start(state)
+    const body = Buffer.from(JSON.stringify({ event: 'charge.success', data: { status: 'success', reference: started.reference, amount: 60000, currency: 'GHS' } }))
+    await web.handlePaystackWebhook({ db, now: NOW, secrets: { paystack: 'sk_test_secret' } }, { rawBody: body, signature: createHmac('sha512', 'sk_test_secret').update(body).digest('hex') })
+    const after = await momo.checkMomoPrompt(promptCtx(STAFF, state), { reference: started.reference })
+    expect(after).toMatchObject({ status: 'paid', sale: { total: 60000 } })
+
+    const declined = { calls: [], requestId: rid(), verify: 'failed', reason: 'Declined by user' }
+    const second = await start(declined, { lines: [{ productId: 'serum', quantity: 1 }] })
+    expect(await momo.checkMomoPrompt(promptCtx(STAFF, declined), { reference: second.reference })).toMatchObject({ status: 'failed', message: 'Declined by user' })
+  })
+
+  it('never charges for stock that is gone, and flags payments that cannot become a sale', async () => {
+    await expectRule(start({ calls: [], requestId: rid() }, { lines: [{ productId: 'cream', quantity: 9 }] }), 'insufficient_stock')
+    // Cancelled, then the customer approves anyway: no sale, a note for the manager.
+    const state = { calls: [], requestId: rid() }
+    const started = await start(state)
+    expect((await momo.cancelMomoPrompt(promptCtx(STAFF, state), { reference: started.reference })).status).toBe('cancelled')
+    const late = await momo.applyMomoCharge({ db, now: NOW }, { status: 'success', reference: started.reference, amount: 60000, currency: 'GHS' }, 'webhook')
+    expect(late.status).toBe('paid_after_cancel')
+    expect((await db.collection('sales').get()).size).toBe(0)
+    // Sent twice and both approved: one sale, the second payment flagged for a refund.
+    const twice = { calls: [], requestId: rid(), verify: 'success', amount: 60000 }
+    const first = await start(twice)
+    const again = await start(twice)
+    expect((await momo.checkMomoPrompt(promptCtx(STAFF, twice), { reference: again.reference })).status).toBe('paid')
+    const extra = await momo.applyMomoCharge({ db, now: NOW }, { status: 'success', reference: first.reference, amount: 60000, currency: 'GHS' }, 'webhook')
+    expect(extra.status).toBe('duplicate')
+    expect((await db.collection('sales').get()).size).toBe(1)
+    const notes = (await db.collection('audit').where('type', '==', 'momo_prompt').get()).docs.map((doc) => doc.data().summary)
+    expect(notes.some((text) => text.includes('paid after it was cancelled'))).toBe(true)
+    expect(notes.some((text) => text.includes('second payment'))).toBe(true)
   })
 })

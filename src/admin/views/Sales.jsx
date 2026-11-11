@@ -7,7 +7,8 @@ import { businessDay, DAY } from '../../../functions/src/core/time.js'
 import { refundedAmount, returnedQuantity, returnValue } from '../../../functions/src/core/sale.js'
 import { Dialog, Empty, Icon, Money, Pill, ReasonDialog, Segmented, Stat } from '../components/ui.jsx'
 import { Guide } from '../components/guide.jsx'
-import { PrintArea, printNow, Receipt, whatsappReceiptLink } from '../components/receipt.jsx'
+import { PrintArea, Receipt, whatsappReceiptLink } from '../components/receipt.jsx'
+import { kickDrawerForCash, useReceiptPrinter } from '../till/printing.jsx'
 import { fmtTime } from '../components/format.js'
 
 const PAID_BY = { cash: 'Cash', momo: 'MoMo', card: 'Card' }
@@ -78,7 +79,8 @@ export default function Sales() {
 }
 
 export function SaleSheet({ sale, onClose }) {
-  const { shop, call } = useOps()
+  const { shop, call, toast } = useOps()
+  const printReceipt = useReceiptPrinter()
   const [action, setAction] = useState(null)
   const canChange = sale.status === 'completed'
   return <Dialog title={`Sale ${sale.number}`} onClose={onClose} sheet>
@@ -88,7 +90,7 @@ export function SaleSheet({ sale, onClose }) {
       <PrintArea><Receipt sale={sale} shop={shop} /></PrintArea>
       {(sale.returns || []).map((entry, index) => <p key={index} className="small muted">Return by {entry.by.name}{entry.approvedBy ? ` (approved by ${entry.approvedBy.name})` : ''}: {formatMoney(entry.amount)} back by {PAID_BY[entry.refundMethod]}, {entry.condition === 'resaleable' ? 'items back on the shelf' : 'items damaged'}. “{entry.reason}”</p>)}
       <div className="button-grid">
-        <button type="button" className="btn secondary" onClick={printNow}><Icon name="printer" size={16} /> Print</button>
+        <button type="button" className="btn secondary" onClick={() => printReceipt(sale, shop, { reprint: true })}><Icon name="printer" size={16} /> Print</button>
         <a className="btn secondary" href={whatsappReceiptLink(sale, shop)} target="_blank" rel="noreferrer"><Icon name="whatsapp" size={16} /> WhatsApp</a>
         {canChange ? <button type="button" className="btn secondary" onClick={() => setAction('return')}><Icon name="undo" size={16} /> Return items</button> : null}
         {canChange ? <button type="button" className="btn danger-outline" onClick={() => setAction('void')}>Cancel sale</button> : null}
@@ -97,14 +99,19 @@ export function SaleSheet({ sale, onClose }) {
     {action === 'void' ? <ReasonDialog title={`Cancel sale ${sale.number}?`} destructive confirmLabel="Cancel sale"
       intro={<p className="small">Everything on this sale goes back into stock. Give the customer back <b>{formatMoney(sale.total - refundedAmount(sale))}</b>. Use this for mistakes made today; for a customer bringing things back, use Return items instead.</p>}
       presets={['Rang up the wrong item', 'Customer changed their mind', 'Paid twice by mistake']}
-      onConfirm={async (reason) => Boolean(await call('voidSale', { saleId: sale.id, reason }, { success: `Sale ${sale.number} cancelled. Stock is back.` }))}
+      onConfirm={async (reason) => {
+        const result = await call('voidSale', { saleId: sale.id, reason }, { success: `Sale ${sale.number} cancelled. Stock is back.` })
+        // Cash goes back to the customer from this till's drawer.
+        if (result) kickDrawerForCash(sale.payment.method, toast)
+        return Boolean(result)
+      }}
       onClose={() => setAction(null)} /> : null}
     {action === 'return' ? <ReturnDialog sale={sale} onClose={() => setAction(null)} /> : null}
   </Dialog>
 }
 
 function ReturnDialog({ sale, onClose }) {
-  const { call } = useOps()
+  const { call, toast } = useOps()
   const [quantities, setQuantities] = useState(() => Object.fromEntries(sale.items.map((item) => [item.productId, 0])))
   const [condition, setCondition] = useState('resaleable')
   const [refundMethod, setRefundMethod] = useState(sale.payment.method)
@@ -119,6 +126,7 @@ function ReturnDialog({ sale, onClose }) {
     if (!valid || busy) return
     setBusy(true)
     const result = await call('returnItems', { saleId: sale.id, lines, condition, refundMethod, reference, reason }, { success: (value) => `Return saved. Give back ${formatMoney(value.amount)}.` })
+    if (result) kickDrawerForCash(refundMethod, toast)
     setBusy(false)
     if (result) onClose()
   }

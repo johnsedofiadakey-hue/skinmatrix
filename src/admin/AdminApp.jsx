@@ -3,7 +3,7 @@ import { signOut } from 'firebase/auth'
 import { LiveProvider, useAccount } from './LiveProvider.jsx'
 import { useHashRoute, useNow, useOps } from './hooks.js'
 import { auth, callFunction, readError } from './live/firebase.js'
-import { ROLE_LABEL } from '../../functions/src/core/rules.js'
+import { ROLE_LABEL, usernameOf } from '../../functions/src/core/rules.js'
 import { Dialog, Icon } from './components/ui.jsx'
 import { fmtFull } from './components/format.js'
 import SignIn from './views/SignIn.jsx'
@@ -13,14 +13,16 @@ import WebsiteOrders, { needsAction, useWebOrders } from './views/WebsiteOrders.
 
 // Pages used less often load when first opened, so the till starts quickly.
 const Sales = lazy(() => import('./views/Sales.jsx'))
+const Customers = lazy(() => import('./views/Customers.jsx'))
 const Drawer = lazy(() => import('./views/Drawer.jsx'))
 const Stock = lazy(() => import('./views/Stock.jsx'))
 const Reports = lazy(() => import('./views/Reports.jsx'))
-const Setup = lazy(() => import('./views/Setup.jsx'))
+const Products = lazy(() => import('./views/Products.jsx'))
 const Team = lazy(() => import('./views/Team.jsx'))
 const Website = lazy(() => import('./views/Website.jsx'))
 const Settings = lazy(() => import('./views/Settings.jsx'))
 const Account = lazy(() => import('./views/Account.jsx'))
+const Till = lazy(() => import('./views/Till.jsx'))
 const Help = lazy(() => import('./views/Help.jsx'))
 
 // Every page, who may open it, and where it sits: in the phone bar at the bottom (tab) or under More.
@@ -29,6 +31,7 @@ const PAGES = [
   { path: 'sell', label: 'POS', icon: 'pos', action: 'sell', tab: true },
   { path: 'sales', label: 'POS history', short: 'History', icon: 'sale', action: 'viewSales', tab: true },
   { path: 'orders', label: 'Website orders', short: 'Web orders', icon: 'cart', action: 'webOrders', tab: true },
+  { path: 'customers', label: 'Customers', icon: 'user', action: 'viewSales' },
   { path: 'drawer', label: 'Cash drawer', icon: 'drawer', action: 'sell' },
   { path: 'stock', label: 'Stock', icon: 'inventory', action: 'viewStock' },
   { path: 'reports', label: 'Reports', icon: 'ledger', action: 'reports' },
@@ -36,6 +39,7 @@ const PAGES = [
   { path: 'team', label: 'Team', icon: 'staff', action: 'staff' },
   { path: 'website', label: 'Website editor', icon: 'globe', action: 'website' },
   { path: 'settings', label: 'Settings', icon: 'settings', action: 'settings' },
+  { path: 'till', label: 'Till setup', icon: 'printer', action: 'sell' },
   { path: 'account', label: 'Account', icon: 'user' },
   { path: 'help', label: 'Help', icon: 'help' },
 ]
@@ -82,7 +86,7 @@ function NoAccess({ account }) {
   const disabled = account.status === 'disabled'
   return <AuthPanel eyebrow="No access" title={disabled ? 'This account is turned off.' : 'This account is not on the team.'}>
     <div className="stack">
-      <p>{disabled ? 'Ask the owner to turn your account back on.' : <>{account.user?.email} is signed in, but the owner has not added it to the team. Ask the owner to add this email in Team.</>}</p>
+      <p>{disabled ? 'Ask the owner to turn your account back on.' : <>{usernameOf(account.user?.email) ? `The username ${usernameOf(account.user.email)}` : account.user?.email} is signed in, but is not on the team. Ask the owner to add you in Team.</>}</p>
       <button type="button" className="btn primary block" onClick={() => signOut(auth)}>Use another account</button>
     </div>
   </AuthPanel>
@@ -108,18 +112,26 @@ function Shell() {
   else if (section === 'sell') page = <Sell />
   else if (section === 'sales') page = <Sales />
   else if (section === 'orders') page = <WebsiteOrders />
+  else if (section === 'customers') page = <Customers />
   else if (section === 'drawer') page = <Drawer />
   else if (section === 'stock') page = <Stock tab={sub} />
   else if (section === 'reports') page = <Reports />
-  else if (section === 'setup') page = <Setup />
+  else if (section === 'setup') page = <Products />
   else if (section === 'team') page = <Team />
   else if (section === 'website') page = <Website />
   else if (section === 'settings') page = <Settings />
+  else if (section === 'till') page = <Till />
   else if (section === 'account') page = <Account />
   else if (section === 'help') page = <Help />
 
+  // The POS fills the whole screen (its own header has the menu, status and sign-out).
+  if (section === 'sell' && permitted) return <>
+    <Sell onMenu={() => setMore(true)} />
+    {more ? <NavSheet pages={allowed} section={section} badges={badges} onClose={() => setMore(false)} onSignOut={leave} me={me} pending={offlineSales.length} /> : null}
+  </>
+
   return <>
-    {!online ? <div className="offline-bar" role="status">No internet. You can still sell: sales are kept on this till and sent when it is back{offlineSales.length ? ` (${offlineSales.length} waiting)` : ''}. Don’t reload this page. Other changes must wait.</div> : null}
+    {!online ? <div className="offline-bar" role="status">No internet. You can still sell: sales are kept on this till and sent when it is back{offlineSales.length ? ` (${offlineSales.length} waiting)` : ''}. Other changes must wait.</div> : null}
     <div className={`frame ${section === 'sell' ? 'is-sell' : ''}`}>
       <aside className="sidebar">
         <a href="#/home" className="brand-mark"><span className="brand-name">SkinMatrix</span><span className="brand-sub">Shop system</span></a>
@@ -164,6 +176,20 @@ function Shell() {
       <button type="button" className="btn ghost block" onClick={leave}><Icon name="logout" size={16} /> Sign out ({me.name})</button>
     </Dialog> : null}
   </>
+}
+
+// Every page this person may open, as big tiles (the POS menu).
+function NavSheet({ pages, section, badges, onClose, onSignOut, me, pending = 0 }) {
+  const [sure, setSure] = useState(false)
+  return <Dialog title="Menu" onClose={onClose} sheet>
+    <div className="more-grid">
+      {pages.map((item) => <a key={item.path} href={`#/${item.path}`} className={section === item.path ? 'active' : ''} onClick={onClose}>
+        <Icon name={item.icon} size={22} /><span>{item.label}</span>{badges[item.path] ? <span className="nav-badge">{badges[item.path]}</span> : null}
+      </a>)}
+    </div>
+    {sure ? <p className="callout warn small"><Icon name="alertCircle" /> {pending} offline sale(s) by {me.name} have not reached the server yet. They stay on this device and send only while {me.name} is signed in here.</p> : null}
+    <button type="button" className={`btn ${sure ? 'danger' : 'ghost'} block`} onClick={() => (pending && !sure ? setSure(true) : onSignOut())}><Icon name="logout" size={16} /> {sure ? 'Sign out anyway' : `Sign out (${me.name})`}</button>
+  </Dialog>
 }
 
 function Missing({ text = 'This page does not exist.' }) {

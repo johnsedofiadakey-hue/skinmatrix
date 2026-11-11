@@ -2,10 +2,11 @@
 // blocks or undoes a sale or an order: a failed text is logged in smsLog and the shop carries on. Nothing is
 // sent unless the owner turns SMS on in Settings and the MNOTIFY_API_KEY secret is set.
 import { logger } from 'firebase-functions'
-import { normalizePhone } from './core/sale.js'
+import { displayPhone, normalizePhone } from './core/sale.js'
+import { sellableFromSummary } from './core/stock.js'
 import { businessDay } from './core/time.js'
 
-export const DEFAULT_SMS = { enabled: false, senderId: 'SkinMatrix', orderPlaced: true, orderUpdates: true, saleReceipt: false }
+export const DEFAULT_SMS = { enabled: false, senderId: 'SkinMatrix', orderPlaced: true, orderUpdates: true, saleReceipt: false, daySummary: false, ownerPhone: '' }
 
 const MNOTIFY_URL = 'https://api.mnotify.com/api/sms/quick'
 const money = (pesewas) => `GHS ${(pesewas / 100).toFixed(2)}`
@@ -20,6 +21,9 @@ export function cleanSms(input) {
     orderPlaced: sms.orderPlaced !== false,
     orderUpdates: sms.orderUpdates !== false,
     saleReceipt: sms.saleReceipt === true,
+    // The day's takings texted to the owner when the day is closed (Reports → Close the day).
+    daySummary: sms.daySummary === true,
+    ownerPhone: normalizePhone(sms.ownerPhone) ? displayPhone(normalizePhone(sms.ownerPhone)) : '',
   }
 }
 
@@ -61,4 +65,33 @@ export async function sendSms(ctx, settings, { to, kind, ref, text }) {
   if (!log.ok) logger.warn('SMS not sent', { kind, ref, error: log.error })
   await ctx.db.collection('smsLog').add(log).catch(() => {})
   return log.ok
+}
+
+// The owner's end-of-day text: takings by payment method, refunds, cancels and what is running low.
+// report: the Z report (core/zreport.js). low: [{ name, units }]. Kept to about two SMS.
+export function daySummaryText({ shopName = 'SkinMatrix', report, low = [] }) {
+  const short = (pesewas) => `${(pesewas / 100).toFixed(2)}`
+  const methods = Object.entries(report.byMethod || {}).filter(([, value]) => value).map(([method, value]) => `${{ cash: 'Cash', momo: 'MoMo', card: 'Card' }[method] || method} ${short(value)}`)
+  const lines = [
+    `${shopName} ${report.day} closed (${report.number}).`,
+    `Takings GHS ${short(report.net)} from ${report.count} sale${report.count === 1 ? '' : 's'}.`,
+    methods.length ? `${methods.join(', ')}.` : '',
+    report.refunds ? `Refunds ${short(report.refunds)}.` : '',
+    report.voidedCount ? `Cancelled ${report.voidedCount}.` : '',
+    report.drawers?.some((drawer) => drawer.status === 'closed' && drawer.difference) ? `Drawer ${report.drawers.filter((drawer) => drawer.status === 'closed' && drawer.difference).map((drawer) => `${drawer.cashier} ${drawer.difference > 0 ? '+' : ''}${short(drawer.difference)}`).join(', ')}.` : '',
+    low.length ? `Low: ${low.slice(0, 4).map((item) => `${item.name} (${item.units})`).join(', ')}${low.length > 4 ? ` +${low.length - 4} more` : ''}.` : '',
+  ]
+  return lines.filter(Boolean).join(' ')
+}
+
+// Products at or below their warning level, lowest first. db: Firestore. now: ms.
+export async function lowStock(db, now) {
+  const [catalog, ops, stock] = await Promise.all([db.doc('site/catalog').get(), db.collection('catalogOps').get(), db.collection('stock').get()])
+  const warnAt = new Map(ops.docs.map((doc) => [doc.id, doc.data().reorderPoint ?? 3]))
+  const units = new Map(stock.docs.map((doc) => [doc.id, sellableFromSummary(doc.data(), now)]))
+  return (catalog.data()?.products || [])
+    .filter((product) => product.price > 0)
+    .map((product) => ({ name: product.name, units: units.get(product.id) || 0, warnAt: warnAt.get(product.id) ?? 3 }))
+    .filter((item) => item.units <= item.warnAt)
+    .sort((a, b) => a.units - b.units)
 }

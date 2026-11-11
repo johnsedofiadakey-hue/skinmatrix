@@ -43,6 +43,23 @@ const ICONS = {
   cart: 'M3 4h2l2.4 11h11.2L21 7H6.2M9 20a1 1 0 100-2 1 1 0 000 2zM18 20a1 1 0 100-2 1 1 0 000 2z',
   settings: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z',
   drawer: 'M3 7h18v12H3zM3 11h18M10 15h4M6 7l2-3h8l2 3',
+  screen: 'M3 4h18v12H3zM8 20h8M12 16v4',
+  swap: 'M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7',
+  refresh: 'M20 11a8 8 0 0 0-14.9-3.9M4 4v4h4M4 13a8 8 0 0 0 14.9 3.9M20 20v-4h-4',
+  folder: 'M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
+  sun: 'M12 17a5 5 0 100-10 5 5 0 000 10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4',
+  moon: 'M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z',
+  pause: 'M8 5v14M16 5v14',
+  wifi: 'M5 12.6a10 10 0 0114 0M8.5 16.1a5 5 0 017 0M2 9a15 15 0 0120 0M12 20h.01',
+  backspace: 'M21 5H8l-6 7 6 7h13zM17 9l-6 6M11 9l6 6',
+  percent: 'M19 5L5 19M6.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM17.5 20a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
+  cash: 'M2 6h20v12H2zM12 15a3 3 0 100-6 3 3 0 000 6zM6 12h.01M18 12h.01',
+  phone: 'M7 2h10v20H7zM11 18h2',
+  card: 'M2 5h20v14H2zM2 10h20M6 15h4',
+  switchUser: 'M9 12a4 4 0 100-8 4 4 0 000 8zM2 21v-1a6 6 0 016-6h2M17 14l3 3-3 3M20 17h-6',
+  resume: 'M6 4l14 8-14 8z',
+  grid: 'M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z',
+  wifiOff: 'M2 2l20 20M8.5 16.4a5 5 0 017 0M5 12.9a10 10 0 015.2-2.8M19 12.9a10 10 0 00-2.4-1.7M1.4 9a15 15 0 014.3-2.6M22.6 9A15 15 0 0011 5.1M12 20h.01',
 }
 
 export function Icon({ name, size = 18, className = '' }) {
@@ -106,8 +123,8 @@ export function Empty({ title, children }) {
   return <div className="empty"><b>{title}</b>{children ? <p>{children}</p> : null}</div>
 }
 
-export function Card({ title, actions, children, className = '', flush = false }) {
-  return <section className={`card ${className}`}>
+export function Card({ title, actions, children, className = '', flush = false, id }) {
+  return <section className={`card ${className}`} id={id}>
     {title || actions ? <header className="card-head"><h2>{title}</h2>{actions ? <div className="card-actions">{actions}</div> : null}</header> : null}
     <div className={flush ? 'card-body flush' : 'card-body'}>{children}</div>
   </section>
@@ -182,7 +199,7 @@ export function ReasonDialog({ title, intro, confirmLabel, destructive = false, 
 
 export function Segmented({ value, onChange, options, label }) {
   return <div className="segmented" role="radiogroup" aria-label={label}>
-    {options.map((option) => <button type="button" role="radio" aria-checked={value === option.value} key={option.value} className={value === option.value ? 'on' : ''} onClick={() => onChange(option.value)}>
+    {options.map((option) => <button type="button" role="radio" aria-checked={value === option.value} key={option.value} className={value === option.value ? 'on' : ''} disabled={option.disabled} title={option.disabled ? 'Needs the SkinMatrix Till app' : undefined} onClick={() => onChange(option.value)}>
       {option.label}{option.count !== undefined ? <span className="count">{option.count}</span> : null}
     </button>)}
   </div>

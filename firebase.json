@@ -8,6 +8,13 @@
     ],
     "rewrites": [
       {
+        "source": "/photos/**",
+        "function": {
+          "functionId": "productPhoto",
+          "region": "europe-west2"
+        }
+      },
+      {
         "source": "/admin",
         "destination": "/admin/index.html"
       },
@@ -18,6 +25,17 @@
       {
         "source": "**",
         "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/till-updates/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
       }
     ]
   },

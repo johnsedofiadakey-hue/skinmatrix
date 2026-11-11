@@ -70,6 +70,7 @@ service cloud.firestore {
     match /catalogOps/{productId} { allow read: if isStaff(); allow write: if false; }
     match /stock/{productId} { allow read: if isStaff(); allow write: if false; }
     match /sales/{saleId} { allow read: if isStaff(); allow write: if false; }
+    match /customers/{phone} { allow read: if isStaff(); allow write: if false; }
 
     // Managers and the owner: costs, batches, stock history, suppliers, deliveries, counts and the activity log.
     match /catalogCosts/{productId} { allow read: if isManager(); allow write: if false; }
@@ -90,5 +91,8 @@ service cloud.firestore {
       allow read: if isManager() || (isStaff() && resource.data.cashier.uid == request.auth.uid);
       allow write: if false;
     }
+
+    // Z reports (the closing record of each business day): managers and the owner. Only closeDay writes.
+    match /zReports/{day} { allow read: if isManager(); allow write: if false; }
   }
 }
