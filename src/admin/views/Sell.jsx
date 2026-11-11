@@ -15,7 +15,7 @@ import { OfflineSales } from '../components/offline.jsx'
 import { Dialog, Icon } from '../components/ui.jsx'
 import { beep, CameraScanner, useHardwareScanner } from '../components/scanner.jsx'
 import { PrintArea, Receipt, whatsappReceiptLink } from '../components/receipt.jsx'
-import { setTill, useTill } from '../till/device.js'
+import { bridge, setTill, useTill } from '../till/device.js'
 import { canSwapScreens, ONE_SCREEN_HELP, openCustomerDisplay, swapScreens, useCustomerDisplay } from '../till/display.js'
 import { kickDrawerForCash, useReceiptPrinter } from '../till/printing.jsx'
 import { NoSaleDialog } from '../till/TillBar.jsx'
@@ -74,6 +74,12 @@ export default function Sell({ onMenu }) {
   const [clearArmed, setClearArmed] = useState(false)
   const requestId = useRef(newId())
   const momoPrompt = useMomoPrompt({ call, online, onPaid: (sale) => finished(sale) })
+  // Tells the till app a sale is on screen, so it never restarts for an update in the middle of one.
+  const saleOnScreen = cart.length > 0 || momoPrompt.open
+  useEffect(() => {
+    bridge()?.setBusy?.(saleOnScreen).catch?.(() => {})
+  }, [saleOnScreen])
+  useEffect(() => () => { bridge()?.setBusy?.(false)?.catch?.(() => {}) }, [])
 
   // ── Stock: units already sold offline on this till are not in the server's count yet ──
   const queued = useMemo(() => {

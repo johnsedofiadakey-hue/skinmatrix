@@ -79,6 +79,7 @@ export default function Till() {
     </Card>
 
     <BackupCard />
+    <UpdatesCard app={app} info={appInfo} />
   </div>
 }
 
@@ -363,4 +364,39 @@ function Choice({ on, disabled, icon, title, text, onClick }) {
   return <button type="button" className={`choice ${on ? 'on' : ''}`} disabled={disabled} aria-pressed={on} onClick={onClick}>
     <Icon name={icon} size={22} /><b>{title}</b><span className="muted small">{text}</span>
   </button>
+}
+
+// ── Updates of the till app itself (desktop/lib/updates.js) ──
+function UpdatesCard({ app, info }) {
+  const { toast } = useOps()
+  const [update, setUpdate] = useState(null)
+  useEffect(() => { setUpdate(info?.update || null) }, [info])
+  if (!app || !info) return null
+  if (!info.update) {
+    return <Card title="Updates of this app">
+      <p className="small muted">This version updates only by installing a new copy. Install SkinMatrix Till 1.6.0 or newer once: after that, new versions arrive by themselves.</p>
+    </Card>
+  }
+  const status = update?.status
+  const text = {
+    off: 'Automatic updates work only in the installed app on Windows.',
+    idle: 'Checks for a new version a minute after starting, then every 4 hours.',
+    checking: 'Checking for a new version…',
+    current: 'This is the newest version.',
+    downloading: `Downloading version ${update?.version || ''}${update?.percent ? ` (${update.percent}%)` : ''} in the background. Keep selling.`,
+    ready: `Version ${update?.version || ''} is ready. It installs by itself the next time the computer wakes or the app is closed, or now with the button.`,
+    error: 'Could not check for updates (no internet?). It tries again later.',
+  }[status] || ''
+  const check = async () => { try { setUpdate(await app.checkUpdate()) } catch (error) { toast(error.message, 'error') } }
+  const install = async () => { try { await app.installUpdate() } catch (error) { toast(error.message, 'error') } }
+  return <Card title="Updates of this app">
+    <div className="stack">
+      <p className="small">Version {info.version}. {text}</p>
+      <div className="row wrap">
+        {status === 'ready'
+          ? <button type="button" className="btn primary" onClick={install}>Restart and update now</button>
+          : status !== 'off' ? <button type="button" className="btn secondary" onClick={check} disabled={status === 'checking' || status === 'downloading'}>Check now</button> : null}
+      </div>
+    </div>
+  </Card>
 }

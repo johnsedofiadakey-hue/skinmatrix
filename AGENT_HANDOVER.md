@@ -163,3 +163,10 @@ Other server modules: `src/web.js` (website checkout, no sign-in), `src/shifts.j
 - `powerMonitor` resume and unlock-screen events, and second-instance launches, call `wakeUp()`: reload if the page crashed, restore and show the till, `relayout()` both screens.
 - Till setup shows the status from `till:info().autoStart`.
 - Not verified on Windows (built on a Mac); the schtasks call is unit-tested with a fake schtasks.
+
+## Automatic till app updates (desktop 1.6.0, 2026-11-11)
+- `desktop/lib/updates.js` uses electron-updater (generic provider) with `https://skinmatrixgh.web.app/till-updates/`. It checks 1 minute after start, then every 4 h, and downloads in the background. It installs (silently, then reopens) only on wake from sleep/hibernate when no sale is on screen (`till:setBusy` from Sell), on app quit, or from Till setup → "Restart and update now".
+- **To release a new till app version:** bump `desktop/package.json` version → `cd desktop && npm run release` (builds and copies into `public/till-updates/`, which is gitignored) → `cd .. && npm run build && firebase deploy --only hosting`.
+- **Warning:** any hosting deploy from a checkout without `public/till-updates/` removes the update files from the site. Installed tills then just find no update; run `npm run release` again to restore them.
+- Firestore backup schedules (gcloud): daily, kept 7 days; weekly on Sunday, kept 14 weeks.
+- Installer filename is now `SkinMatrix-Till-Setup-<version>.exe` (no spaces). It can also be downloaded on the till from the URL above.

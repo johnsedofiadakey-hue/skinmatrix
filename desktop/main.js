@@ -13,6 +13,7 @@ const { describeScreens, fingerprint, pickScreens } = require('./lib/screens.js'
 const { PrintError, printNetwork, systemPrinter, toBuffer } = require('./lib/printing.js')
 const { BackupError, appendLog, defaultFolder, readUnsent, saveUnsent } = require('./lib/backup.js')
 const { installTask, removeTask } = require('./lib/autostart.js')
+const { startUpdates } = require('./lib/updates.js')
 
 const DISPLAY_PATH = '/admin/display.html'
 const BACKGROUND = '#f3f3f7'
@@ -23,6 +24,8 @@ let mainWindow = null
 let displayWindow = null
 let printer = null
 let autoStart = { ok: null } // the Windows task that opens the app on wake (lib/autostart.js)
+let updates = null // automatic updates (lib/updates.js)
+let pageBusy = false // a sale is on the till screen: never restart for an update then
 
 if (!app.requestSingleInstanceLock()) app.quit()
 
@@ -310,7 +313,13 @@ async function installedPrinters() {
   return (await contents.getPrintersAsync()).map((item) => ({ name: item.name, displayName: item.displayName || item.name, isDefault: Boolean(item.isDefault) }))
 }
 
-ipcMain.handle('till:info', guard(async () => ({ version: app.getVersion(), platform: process.platform, url: config.url, autoStart })))
+ipcMain.handle('till:info', guard(async () => ({ version: app.getVersion(), platform: process.platform, url: config.url, autoStart, update: updates?.state() || { status: 'off' } })))
+ipcMain.handle('till:checkUpdate', guard(async () => (updates ? updates.check() : { status: 'off' })))
+ipcMain.handle('till:installUpdate', guard(async () => {
+  if (pageBusy) throw new BackupError('Finish or hold the sale on screen first.')
+  return { ok: Boolean(updates?.install()) }
+}))
+ipcMain.handle('till:setBusy', guard(async (busy) => { pageBusy = busy === true; return { ok: true } }))
 ipcMain.handle('till:listPrinters', guard(installedPrinters))
 ipcMain.handle('till:printRaw', guard(async (job) => {
   const data = toBuffer(job?.data)
@@ -375,10 +384,12 @@ ipcMain.handle('till:chooseBackupFolder', guard(async (clear) => {
 // Brings the till back after the computer wakes (sleep, hibernate), is unlocked, or the app is opened again:
 // the till in front, the page reloaded if it died, and both screens put back where they belong.
 let wakeTimer
-function wakeUp(delay = 0) {
+function wakeUp(delay = 0, { mayUpdate = false } = {}) {
   clearTimeout(wakeTimer)
   wakeTimer = setTimeout(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return
+    // Just woke up and no sale on screen: a good moment to finish a downloaded update (the app reopens itself).
+    if (mayUpdate && !pageBusy && updates?.installIfReady()) return
     if (mainWindow.webContents.isCrashed()) mainWindow.loadURL(config.url)
     if (mainWindow.isMinimized()) mainWindow.restore()
     if (!mainWindow.isVisible()) mainWindow.show()
@@ -417,9 +428,10 @@ app.whenReady().then(() => {
   createMainWindow()
 
   // Woken from sleep or hibernate, or unlocked: give Windows a moment to bring the monitors and network back.
-  powerMonitor.on('resume', () => wakeUp(3000))
+  powerMonitor.on('resume', () => wakeUp(3000, { mayUpdate: true }))
   powerMonitor.on('unlock-screen', () => wakeUp(1500))
   setUpAutoStart().catch((error) => { autoStart = { ok: false, error: error.message } })
+  updates = startUpdates({ app })
 })
 
 app.on('window-all-closed', () => app.quit())

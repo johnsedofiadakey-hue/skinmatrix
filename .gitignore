@@ -11,3 +11,6 @@ work/
 # Desktop till app
 desktop/node_modules/
 desktop/release/
+
+# Till app installers published for automatic updates (desktop/scripts/publish-update.js)
+public/till-updates/
