@@ -533,3 +533,8 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
 .facts dt { color: var(--muted, #6b7280); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 480px) { .facts > div { grid-template-columns: 1fr; gap: 2px; } }
+
+/* Till setup → Updates */
+.callout.good { background: var(--green-bg); color: var(--green); }
+.update-bar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.update-bar > span { display: block; height: 100%; background: var(--green); transition: width 0.4s ease; }

@@ -333,6 +333,11 @@ async function installedPrinters() {
 
 ipcMain.handle('till:info', guard(async () => ({ version: app.getVersion(), platform: process.platform, url: config.url, autoStart, update: updates?.state() || { status: 'off' } })))
 ipcMain.handle('till:checkUpdate', guard(async () => (updates ? updates.check() : { status: 'off' })))
+ipcMain.handle('till:updateStatus', guard(async () => updates?.state() || { status: 'off' }))
+ipcMain.handle('till:updateNow', guard(async () => {
+  if (pageBusy) throw new BackupError('Finish or hold the sale on screen first.')
+  try { return await (updates ? updates.updateNow() : { status: 'off' }) } catch (error) { throw new BackupError(error.message) }
+}))
 ipcMain.handle('till:installUpdate', guard(async () => {
   if (pageBusy) throw new BackupError('Finish or hold the sale on screen first.')
   return { ok: Boolean(updates?.install()) }

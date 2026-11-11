@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('skinmatrixTill', Object.freeze({
   chooseBackupFolder: (clear) => ipcRenderer.invoke('till:chooseBackupFolder', clear === null ? null : undefined),
   // Updates of this app (desktop/lib/updates.js). setBusy(true) while a sale is on screen: no restart then.
   checkUpdate: () => ipcRenderer.invoke('till:checkUpdate'),
+  updateStatus: () => ipcRenderer.invoke('till:updateStatus'),
+  updateNow: () => ipcRenderer.invoke('till:updateNow'),
   installUpdate: () => ipcRenderer.invoke('till:installUpdate'),
   setBusy: (busy) => ipcRenderer.invoke('till:setBusy', busy === true),
 }))

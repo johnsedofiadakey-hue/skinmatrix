@@ -38,6 +38,7 @@ const TOPICS = [
       'If the server refuses an offline sale (for example the stock ran out), it shows on the POS page. Fix the reason and press Try again.',
       'The SkinMatrix Till app (1.4.0 or newer) also saves every offline sale in Documents → SkinMatrix Till Backups on the computer. If the app’s own copy is ever lost, the sales come back by themselves and are sent. A spreadsheet there (offline-sales-YEAR-MONTH.csv) lists every offline sale: made, sent, refused, removed.',
       'For extra safety add a second backup folder (a USB stick, or a OneDrive folder) in Till setup → Backup on this computer.',
+      'To get the newest version of everything: Till setup → Updates → Update now. It loads the newest shop system and, in the till app (1.8.0 or newer), downloads and installs the newest till app, which then reopens by itself. Do it when no customer is waiting.',
       'The till app (1.5.0 or newer) opens by itself when the computer starts, wakes from sleep or hibernate (power button), or is unlocked. If it was already open it comes to the front with the customer screen back in place. Till setup says whether this is on.',
       'Connect the till to the internet at least once a week: offline sales older than 7 days cannot be sent by themselves. The POS warns from day 2.',
       'Offline sales belong to the person who made them and only send while that person is signed in on this till. Do not switch user until the list of sales to send is empty.',

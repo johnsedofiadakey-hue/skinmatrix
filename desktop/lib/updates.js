@@ -12,7 +12,7 @@ const FIRST_CHECK = 60 * 1000
 
 function startUpdates({ app, log = console }) {
   let state = { status: 'off', version: null, error: null, checkedAt: null }
-  if (!app.isPackaged || process.platform !== 'win32') return { state: () => state, check: async () => state, installIfReady: () => false, install: () => false }
+  if (!app.isPackaged || process.platform !== 'win32') return { state: () => state, check: async () => state, installIfReady: () => false, install: () => false, updateNow: async () => state }
 
   const { autoUpdater } = require('electron-updater')
   autoUpdater.autoDownload = true
@@ -43,7 +43,46 @@ function startUpdates({ app, log = console }) {
     setImmediate(() => autoUpdater.quitAndInstall(true, true))
     return true
   }
-  return { state: () => state, check, install, installIfReady: install }
+  // "Update now" in Till setup: check, download if there is a new version (progress in state()), then install and
+  // reopen. Resolves to { status: 'current' } when there is nothing new, { status: 'installing' } just before the
+  // app restarts. Throws with a plain message if it cannot reach the website.
+  let running = null
+  const updateNow = () => {
+    if (running) return running
+    running = (async () => {
+      if (state.status === 'ready') { install(); return { ...state, status: 'installing' } }
+      state = { ...state, status: 'checking', error: null }
+      let result
+      try { result = await autoUpdater.checkForUpdates() } catch (error) { state = { ...state, status: 'error', error: String(error?.message || error).split('\n')[0] }; throw new Error('Could not reach the update server. Check the internet and try again.') }
+      const newer = result?.isUpdateAvailable ?? (result?.updateInfo?.version && result.updateInfo.version !== app.getVersion())
+      if (!newer) { state = { ...state, status: 'current', checkedAt: Date.now() }; return state }
+      state = { ...state, status: 'downloading', version: result.updateInfo.version, percent: state.percent || 0 }
+      // A background download may already be running (then there is no new downloadPromise): wait for it to finish.
+      let onDone
+      let onError
+      const finished = new Promise((resolve, reject) => {
+        onDone = resolve
+        onError = reject
+        autoUpdater.once('update-downloaded', onDone)
+        autoUpdater.once('error', onError)
+      })
+      try {
+        if (state.status !== 'ready') await (result.downloadPromise || finished)
+      } catch {
+        throw new Error('The download stopped (internet?). Press Update now again: it carries on where it stopped.')
+      } finally {
+        autoUpdater.removeListener('update-downloaded', onDone)
+        autoUpdater.removeListener('error', onError)
+        finished.catch(() => {})
+      }
+      state = { ...state, status: 'ready' }
+      install()
+      return { ...state, status: 'installing' }
+    })().finally(() => { running = null })
+    return running
+  }
+
+  return { state: () => state, check, install, installIfReady: install, updateNow }
 }
 
 module.exports = { startUpdates }

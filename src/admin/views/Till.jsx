@@ -11,6 +11,7 @@ import { TextSlip } from '../till/printing.jsx'
 import { printerTestOps } from '../till/escpos.js'
 import { fmtFull } from '../components/format.js'
 import { backupAvailable, backupInfo, chooseBackupFolder, openBackupFolder } from '../till/backup.js'
+import { appUpdateStatus, canUpdateApp, reloadWebsite, updateApp, websiteHasUpdate } from '../till/update.js'
 
 // Which printer the "printer works" tick belongs to: changing the printer or paper clears it.
 const printerKey = (till) => `${till.printer}|${till.printer === 'network' ? `${till.host}:${till.port}` : till.printerName}|${till.paper}`
@@ -67,6 +68,8 @@ export default function Till() {
       </ol>
     </section>
 
+    <UpdatesCard app={app} info={appInfo} />
+
     <PrinterStep till={till} app={app} />
     <DrawerStep till={till} />
     <DisplayStep till={till} app={app} />
@@ -79,7 +82,6 @@ export default function Till() {
     </Card>
 
     <BackupCard />
-    <UpdatesCard app={app} info={appInfo} />
   </div>
 }
 
@@ -366,37 +368,59 @@ function Choice({ on, disabled, icon, title, text, onClick }) {
   </button>
 }
 
-// ── Updates of the till app itself (desktop/lib/updates.js) ──
+// ── Update now: the shop system and the till app, in one press (src/admin/till/update.js) ──
+const UPDATE_LINK = 'https://skinmatrixgh.web.app/till-updates/'
 function UpdatesCard({ app, info }) {
   const { toast } = useOps()
-  const [update, setUpdate] = useState(null)
-  useEffect(() => { setUpdate(info?.update || null) }, [info])
-  if (!app || !info) return null
-  if (!info.update) {
-    return <Card title="Updates of this app">
-      <p className="small muted">This version updates only by installing a new copy. Install SkinMatrix Till 1.6.0 or newer once: after that, new versions arrive by themselves.</p>
-    </Card>
+  const [phase, setPhase] = useState(null) // checking | downloading | installing | reloading | current | error
+  const [detail, setDetail] = useState('')
+  const [progress, setProgress] = useState(null)
+  const busy = ['checking', 'downloading', 'installing', 'reloading'].includes(phase)
+  const oldApp = Boolean(app) && !canUpdateApp()
+  const waiting = info?.update?.status === 'ready' ? info.update.version : null
+
+  const run = async () => {
+    setPhase('checking'); setDetail(''); setProgress(null)
+    let poll = null
+    try {
+      const websiteNewer = await websiteHasUpdate()
+      if (canUpdateApp()) {
+        poll = setInterval(async () => {
+          const state = await appUpdateStatus().catch(() => null)
+          if (state?.status === 'downloading') { setPhase('downloading'); setProgress(state) }
+        }, 1000)
+        const result = await updateApp()
+        if (result?.status === 'installing') { setPhase('installing'); return }
+      }
+      if (websiteNewer) { setPhase('reloading'); setTimeout(reloadWebsite, 900); return }
+      setPhase('current')
+    } catch (error) {
+      setPhase('error'); setDetail(error.message)
+      toast(error.message, 'error')
+    } finally {
+      clearInterval(poll)
+    }
   }
-  const status = update?.status
-  const text = {
-    off: 'Automatic updates work only in the installed app on Windows.',
-    idle: 'Checks for a new version a minute after starting, then every 4 hours.',
-    checking: 'Checking for a new version…',
-    current: 'This is the newest version.',
-    downloading: `Downloading version ${update?.version || ''}${update?.percent ? ` (${update.percent}%)` : ''} in the background. Keep selling.`,
-    ready: `Version ${update?.version || ''} is ready. It installs by itself the next time the computer wakes or the app is closed, or now with the button.`,
-    error: 'Could not check for updates (no internet?). It tries again later.',
-  }[status] || ''
-  const check = async () => { try { setUpdate(await app.checkUpdate()) } catch (error) { toast(error.message, 'error') } }
-  const install = async () => { try { await app.installUpdate() } catch (error) { toast(error.message, 'error') } }
-  return <Card title="Updates of this app">
+
+  const message = {
+    checking: 'Checking for updates…',
+    downloading: `Downloading the new till app ${progress?.version || ''}${progress?.percent ? ` · ${progress.percent}%` : ''}. This can take a few minutes; keep this page open.`,
+    installing: 'Installing. The till app closes and opens again by itself in about a minute.',
+    reloading: 'Loading the newest shop system…',
+    current: 'Everything is up to date.',
+    error: detail,
+  }[phase]
+
+  return <Card title={<span className="row"><Icon name="refresh" size={18} /> Updates</span>} id="till-updates">
     <div className="stack">
-      <p className="small">Version {info.version}. {text}</p>
-      <div className="row wrap">
-        {status === 'ready'
-          ? <button type="button" className="btn primary" onClick={install}>Restart and update now</button>
-          : status !== 'off' ? <button type="button" className="btn secondary" onClick={check} disabled={status === 'checking' || status === 'downloading'}>Check now</button> : null}
-      </div>
+      <p className="small">Gets every change made to the shop system{app ? ' and the SkinMatrix Till app' : ''} and installs it. Do it when no customer is waiting: the till may restart.</p>
+      {waiting && !phase ? <p className="callout good small"><Icon name="check" /> Version {waiting} is downloaded and ready. Press Update now to install it.</p> : null}
+      {message ? <p className={`small ${phase === 'error' ? 'bad-text' : phase === 'current' ? 'good-text' : ''}`} role="status">{message}</p> : null}
+      {phase === 'downloading' && progress?.percent ? <div className="update-bar" aria-hidden="true"><span style={{ width: `${progress.percent}%` }} /></div> : null}
+      <button type="button" className="btn primary large block" onClick={run} disabled={busy}><Icon name="refresh" size={18} /> {busy ? 'Updating…' : 'Update now'}</button>
+      <p className="muted small">{info?.version ? `Till app ${info.version}. ` : ''}{oldApp
+        ? <>This version of the till app cannot update itself. Install the newest one once from <a href={UPDATE_LINK} target="_blank" rel="noreferrer">{UPDATE_LINK}</a>; after that this button does everything.</>
+        : app ? 'New versions also download by themselves and install when the computer wakes up.' : 'In a browser this updates the shop system only.'}</p>
     </div>
   </Card>
 }
