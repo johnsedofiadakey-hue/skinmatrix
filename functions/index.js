@@ -82,6 +82,7 @@ export const closeShift = callable(shifts, 'closeShift')
 export const saveShopSettings = callable(settings, 'saveShopSettings')
 export const recordNoSale = callable(register, 'recordNoSale')
 export const saveProduct = callable(productsApi, 'saveProduct')
+export const deleteProduct = callable(productsApi, 'deleteProduct')
 export const closeDay = callable(register, 'closeDay')
 
 // MoMo prompts at the till (Paystack charges the customer's phone; see src/momo.js).

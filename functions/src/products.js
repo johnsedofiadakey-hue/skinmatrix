@@ -79,3 +79,32 @@ export async function saveProduct({ db, uid, now }, data) {
     return { productId: id }
   })
 }
+
+// Deletes a product (owner only): off the till, the website and the Products page. Refused while any stock is
+// recorded for it, so stock never disappears without a record: correct the count to 0 first (Stock → the product).
+// Past sales, receipts and reports keep the name and price they were sold at; the barcode becomes free to reuse.
+export async function deleteProduct({ db, uid, now }, data) {
+  const staff = await requireStaff(db, uid, 'products')
+  const id = text(data?.id, 80)
+  if (!id) throw new RuleError('unknown_product', 'Choose the product to delete.')
+  return db.runTransaction(async (tx) => {
+    const products = await readCatalog(tx, db)
+    const product = products.find((item) => item.id === id)
+    if (!product) throw new RuleError('unknown_product', 'This product was already deleted. Reload the page.')
+    const batches = (await readBatches(tx, db, [id])).get(id) || []
+    const units = batches.reduce((sum, batch) => sum + (Number(batch.quantity) || 0), 0)
+    if (units > 0) throw new RuleError('has_stock', `${product.name} still has ${units} in stock (expired ones included). Correct the count to 0 in Stock first, then delete it.`)
+    const availability = await readAvailability(tx, db)
+
+    tx.set(db.doc('site/catalog'), { products: products.filter((item) => item.id !== id), updatedAt: now, updatedBy: uid })
+    tx.delete(db.doc(`catalogOps/${id}`))
+    tx.delete(db.doc(`catalogCosts/${id}`))
+    tx.delete(db.doc(`stock/${id}`))
+    if (Object.prototype.hasOwnProperty.call(availability, id)) {
+      const { [id]: _removed, ...rest } = availability
+      tx.set(db.doc('site/availability'), { products: rest, updatedAt: now })
+    }
+    audit(tx, db, now, staff, 'product_setup', id, `Deleted ${product.name}`)
+    return { deleted: id }
+  })
+}

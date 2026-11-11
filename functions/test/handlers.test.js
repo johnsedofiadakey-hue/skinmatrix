@@ -453,6 +453,23 @@ describe('one product form', () => {
     await expectRule(productsApi.saveProduct(ctx(OWNER), { name: 'Copy', price: 100, barcode: '5012345678900' }), 'duplicate_barcode')
     await expectRule(productsApi.saveProduct(ctx(OWNER), { name: 'No expiry given', price: 100, opening: { quantity: 3 } }), 'expiry_required')
   })
+
+  it('deletes a product only when it has no stock, owner only, and frees its barcode', async () => {
+    const stocked = await productsApi.saveProduct(ctx(OWNER), { name: 'Stocked Mist', price: 5000, barcode: '4006381333931', tracksExpiry: false, opening: { quantity: 2 } })
+    await expectRule(productsApi.deleteProduct(ctx(OWNER), { id: stocked.productId }), 'has_stock')
+
+    const empty = await productsApi.saveProduct(ctx(OWNER), { name: 'Duplicate Gel', price: 3000, barcode: '5000158062528', cost: 1000 })
+    await expectRule(productsApi.deleteProduct(ctx(STAFF), { id: empty.productId }), 'forbidden')
+    await sell(STAFF, [{ productId: stocked.productId, quantity: 1 }]) // history must survive deleting other products
+    expect(await productsApi.deleteProduct(ctx(OWNER), { id: empty.productId })).toEqual({ deleted: empty.productId })
+    const catalog = (await db.doc('site/catalog').get()).data().products
+    expect(catalog.some((product) => product.id === empty.productId)).toBe(false)
+    expect((await db.doc(`catalogOps/${empty.productId}`).get()).exists).toBe(false)
+    expect((await db.doc(`catalogCosts/${empty.productId}`).get()).exists).toBe(false)
+    await expectRule(productsApi.deleteProduct(ctx(OWNER), { id: empty.productId }), 'unknown_product')
+    // The barcode can now go on another product.
+    await productsApi.saveProduct(ctx(OWNER), { name: 'Real Gel', price: 3000, barcode: '5000158062528' })
+  })
 })
 
 

@@ -59,6 +59,7 @@ const TOPICS = [
       'A new box at the till during a sale: a manager or owner can scan it and add the product right there; it goes straight into the sale. Cashiers see a message to ask a manager.',
       'Receive stock: scan each box, type how many and the expiry month. A box the shop does not know opens “New product”.',
       'A product with no barcode: Products → tap it → click the barcode box → scan, or leave it empty and sell it by name.',
+      'Deleting a product (owner only): Products → tap it → More options → Delete this product. A product with stock left must have its count set to 0 first. Past sales keep it. To keep a product but hide it from customers, untick “Show on the website” instead.',
     ],
   },
   {

@@ -549,3 +549,5 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
 .product-link-list button:hover { border-color: var(--accent); }
 .product-link-list .product-row-art { width: 40px; height: 40px; flex: none; }
 .product-form-add { flex-basis: 100%; }
+.product-delete { border-top: 1px solid var(--line); padding-top: 12px; }
+.product-delete .callout .row { flex-basis: 100%; justify-content: flex-end; }

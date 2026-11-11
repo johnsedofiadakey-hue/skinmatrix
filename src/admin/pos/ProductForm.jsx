@@ -39,6 +39,7 @@ export function ProductForm({ product, barcode: scanned = '', onClose, onReceive
   const [busy, setBusy] = useState(false)
   const [linked, setLinked] = useState(null) // an existing product (no barcode yet) chosen for the scanned barcode
   const [linkSearch, setLinkSearch] = useState('')
+  const [deleting, setDeleting] = useState(false) // asked "are you sure?"
   const set = (patch) => setForm((current) => ({ ...current, ...patch }))
 
   // A new product from a scanned box: look the barcode up online and fill in what is found (fields left empty only).
@@ -188,6 +189,18 @@ export function ProductForm({ product, barcode: scanned = '', onClose, onReceive
             <label className="field"><span>Shop code (SKU) <em className="muted">optional</em></span><input value={form.sku} onChange={(event) => set({ sku: event.target.value.toUpperCase() })} maxLength={24} /></label>
             {!isNew ? <label className="check"><input type="checkbox" checked={!form.tracksExpiry} onChange={(event) => set({ tracksExpiry: !event.target.checked })} /> This product has no expiry date</label> : null}
             <p className="muted small">The long description and the website’s “good for” tags are in Website editor → Product descriptions.</p>
+            {!isNew && can('products') ? <div className="product-delete">
+              {!deleting ? <button type="button" className="btn danger-outline" onClick={() => setDeleting(true)}><Icon name="trash" size={16} /> Delete this product</button>
+                : (product.stock?.batches || []).reduce((sum, batch) => sum + batch.quantity, 0) > 0 ? <p className="callout warn small"><Icon name="alertCircle" /> <span>{product.name} still has stock. Set its count to 0 first (<a href="#/stock" onClick={onClose}>Stock</a> → the product → Correct the count), then delete it. Or untick “Show on the website” to keep it but hide it from customers.</span></p>
+                  : <div className="callout bad small"><Icon name="alertCircle" /><span><b>Delete {product.name}?</b> It disappears from the till, the website and this list. Past sales and receipts keep it. This cannot be undone.</span>
+                    <span className="row"><button type="button" className="btn ghost" onClick={() => setDeleting(false)}>Keep it</button>
+                      <button type="button" className="btn danger" disabled={busy} onClick={async () => {
+                        setBusy(true)
+                        const done = await call('deleteProduct', { id: product.id }, { success: `${product.name} deleted.` })
+                        setBusy(false)
+                        if (done) onClose()
+                      }}>Delete</button></span></div>}
+            </div> : null}
           </div>
         </details>
 
