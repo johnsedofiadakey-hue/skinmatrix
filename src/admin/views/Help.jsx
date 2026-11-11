@@ -55,6 +55,7 @@ const TOPICS = [
       'Selling: scan the box, or type part of the name or code in the search box on the POS and tap the product.',
       'Adding a new product: on the Products page, scan the box. If the shop does not have it, “New product” opens with the barcode filled in (and often the name, brand and size, looked up online). Add the price and how many you have, then Add product.',
       'Scanning a box the shop has opens that product, to change the price or receive stock.',
+      'A product already in the shop but without a barcode: scan its box on the Products page, then under “Already in the shop without a barcode?” tap it. The barcode is saved on it, and you can type how many to add to stock in the same form.',
       'A new box at the till during a sale: a manager or owner can scan it and add the product right there; it goes straight into the sale. Cashiers see a message to ask a manager.',
       'Receive stock: scan each box, type how many and the expiry month. A box the shop does not know opens “New product”.',
       'A product with no barcode: Products → tap it → click the barcode box → scan, or leave it empty and sell it by name.',

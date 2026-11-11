@@ -37,6 +37,8 @@ export function ProductForm({ product, barcode: scanned = '', onClose, onReceive
   }))
   const [camera, setCamera] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [linked, setLinked] = useState(null) // an existing product (no barcode yet) chosen for the scanned barcode
+  const [linkSearch, setLinkSearch] = useState('')
   const set = (patch) => setForm((current) => ({ ...current, ...patch }))
 
   // A new product from a scanned box: look the barcode up online and fill in what is found (fields left empty only).
@@ -62,7 +64,7 @@ export function ProductForm({ product, barcode: scanned = '', onClose, onReceive
     form.price.trim() && (price === null || price <= 0) ? 'Type the price like 250 or 250.50.' : '',
     form.cost.trim() && cost === null ? 'Type the cost like 120 or 120.50.' : '',
     barcodeOwner ? `This barcode is already on ${barcodeOwner.name}.` : '',
-    isNew && quantity > 0 && form.tracksExpiry && !form.expiry ? 'Choose the expiry month printed on the box.' : '',
+    quantity > 0 && form.tracksExpiry && !form.expiry ? 'Choose the expiry month printed on the box.' : '',
     form.quantity.trim() && !(quantity >= 0) ? 'Type how many you have, as a whole number.' : '',
   ].filter(Boolean)
   const units = product ? sellableFromSummary(product.stock, now) : 0
@@ -77,12 +79,33 @@ export function ProductForm({ product, barcode: scanned = '', onClose, onReceive
       price, barcode: form.barcode.trim(), sku: form.sku, reorderPoint: Number.parseInt(form.reorderPoint, 10) || 0, tracksExpiry: form.tracksExpiry,
       ...(can('costs') ? { cost } : {}),
       ...(isNew && quantity > 0 ? { opening: { quantity, expiresOn: form.tracksExpiry ? lastDayOf(form.expiry) : null } } : {}),
-    }, { success: isNew ? `${form.name} added${price ? '. It is on the till now' : ''}.` : 'Saved.' })
+    }, { success: isNew ? `${form.name} added${price ? '. It is on the till now' : ''}.` : quantity > 0 ? undefined : 'Saved.' })
+    // An existing product: the boxes typed in "Add to stock" are received after the product is saved.
+    let received = true
+    if (result && !isNew && quantity > 0) {
+      received = Boolean(await call('receiveDelivery', {
+        lines: [{ productId: product.id, quantity, lot: 'NONE', expiresOn: form.tracksExpiry ? lastDayOf(form.expiry) : null, unitCost: (can('costs') ? cost : null) ?? product.cost ?? 0 }],
+      }, { success: `Added ${quantity} to stock.` }))
+    }
     setBusy(false)
     if (!result) return
     onSaved?.(result.productId || product?.id, { price })
-    onClose()
+    if (received) onClose()
+    else set({ quantity: '' }) // the product was saved; the stock was not: the message says why
   }
+
+  // A scanned box may be a product the shop already sells but never gave a barcode: offer those first, so it is
+  // linked instead of added twice.
+  const unlinked = isNew && scanned ? products.filter((item) => !item.setup.barcode) : []
+  const words = (linkSearch || `${form.brand} ${form.name}`).toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 2)
+  const candidates = unlinked
+    .map((item) => ({ item, score: words.filter((word) => `${item.name} ${item.brand} ${item.size}`.toLowerCase().includes(word)).length }))
+    .filter((row) => (linkSearch ? row.score > 0 : true))
+    .sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name))
+    .slice(0, 5)
+    .map((row) => row.item)
+
+  if (linked) return <ProductForm product={linked} barcode={scanned} onClose={onClose} onReceive={onReceive} onSaved={onSaved} />
 
   return <Dialog title={isNew ? (scanned ? 'New product' : 'Add a product') : product.name} onClose={onClose} sheet wide>
     <form className="product-form" onSubmit={save}>
@@ -103,6 +126,20 @@ export function ProductForm({ product, barcode: scanned = '', onClose, onReceive
           <span><b>Barcode {scanned} is not in the shop yet.</b> {lookup?.status === 'looking' ? 'Looking it up online…'
             : lookup?.status === 'found' ? `Found on ${lookup.source}: check the name, brand and size, then add the price and how many you have.`
               : 'Type the name and price, then how many you have. The barcode is already filled in.'}</span></p> : null}
+        {unlinked.length ? <details className="product-link" open>
+          <summary>Already in the shop without a barcode? Pick it instead</summary>
+          <div className="stack">
+            <input value={linkSearch} onChange={(event) => setLinkSearch(event.target.value)} placeholder="Search products without a barcode" aria-label="Search products without a barcode" />
+            {candidates.length ? <ul className="product-link-list">{candidates.map((item) => <li key={item.id}>
+              <button type="button" onClick={() => setLinked(item)}>
+                <span className="product-row-art">{item.image ? <img src={item.image} alt="" referrerPolicy="no-referrer" /> : <Icon name="products" size={20} />}</span>
+                <span className="grow"><b>{item.name}</b><span className="muted small block">{[item.brand, item.size].filter(Boolean).join(' · ')}</span></span>
+                <span className="small">Use this</span>
+              </button>
+            </li>)}</ul> : <p className="muted small">No match. Fill in the form below to add it as a new product.</p>}
+          </div>
+        </details> : null}
+        {!isNew && scanned && !product.setup?.barcode ? <p className="callout good small" role="status"><Icon name="check" /> <span>Barcode {scanned} will be saved on this product. Add stock below if you like, then Save changes.</span></p> : null}
         <label className="field"><span>Product name</span><input value={form.name} onChange={(event) => set({ name: event.target.value })} maxLength={80} data-autofocus={isNew ? true : undefined} placeholder="e.g. Vitamin C Serum" /></label>
         <div className="field-row">
           <label className="field"><span>Brand</span><input value={form.brand} onChange={(event) => set({ brand: event.target.value })} maxLength={40} /></label>
@@ -136,6 +173,10 @@ export function ProductForm({ product, barcode: scanned = '', onClose, onReceive
           <span className="grow"><b>{units}</b> in stock{product.stock?.nextExpiry ? <span className="muted"> · next expiry {fmtExpiry(product.stock.nextExpiry)}</span> : null}</span>
           {onReceive ? <button type="button" className="btn secondary" onClick={onReceive}><Icon name="plus" size={16} /> Receive stock</button> : null}
           <a className="btn ghost" href="#/stock">Correct the count</a>
+          {can('deliveries') ? <div className="field-row product-form-add">
+            <label className="field"><span>Add to stock <em className="muted">optional: boxes you have just counted or received</em></span><input className="big-input" inputMode="numeric" value={form.quantity} onChange={(event) => set({ quantity: event.target.value.replace(/\D/g, '') })} placeholder="0" /></label>
+            {form.tracksExpiry && quantity > 0 ? <label className="field"><span>Expiry month <em className="muted">on the box</em></span><input type="month" value={form.expiry} onChange={(event) => set({ expiry: event.target.value })} /></label> : null}
+          </div> : null}
         </div>}
 
         <label className="check big"><input type="checkbox" checked={form.visible} onChange={(event) => set({ visible: event.target.checked })} /> Show on the website (customers can order it when it is in stock)</label>
