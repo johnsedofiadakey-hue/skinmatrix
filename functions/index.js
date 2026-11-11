@@ -14,6 +14,7 @@ import * as register from './src/register.js'
 import * as productsApi from './src/products.js'
 import * as web from './src/web.js'
 import * as momo from './src/momo.js'
+import * as photos from './src/photos.js'
 import { RuleError } from './src/core/rules.js'
 
 initializeApp()
@@ -84,6 +85,20 @@ export const recordNoSale = callable(register, 'recordNoSale')
 export const saveProduct = callable(productsApi, 'saveProduct')
 export const deleteProduct = callable(productsApi, 'deleteProduct')
 export const closeDay = callable(register, 'closeDay')
+
+// Product photos: uploaded from the product form, served on the website at /photos/<name> (firebase.json rewrite).
+export const uploadProductPhoto = callable(photos, 'uploadProductPhoto')
+export const productPhoto = onRequest({ invoker: 'public', memory: '256MiB' }, async (request, response) => {
+  if (request.method !== 'GET' && request.method !== 'HEAD') { response.status(405).send('GET only'); return }
+  try {
+    const photo = await photos.readPhoto({ db }, request.path)
+    if (photo.status !== 200) { response.set('Cache-Control', 'public, max-age=60').status(404).send('Not found'); return }
+    response.set('Content-Type', photo.type).set('Cache-Control', photo.cache).set('X-Content-Type-Options', 'nosniff').status(200).send(photo.body)
+  } catch (error) {
+    logger.error('productPhoto failed', error)
+    response.status(500).send('error')
+  }
+})
 
 // MoMo prompts at the till (Paystack charges the customer's phone; see src/momo.js).
 export const momoPromptReady = callable(momo, 'momoPromptReady')

@@ -11,12 +11,15 @@ import { Dialog, Icon, Segmented } from '../components/ui.jsx'
 import { CameraScanner } from '../components/scanner.jsx'
 import { fmtExpiry } from '../components/format.js'
 import { isRetailBarcode, lookupBarcode } from './barcodeLookup.js'
+import { shrinkPhoto } from './photo.js'
+import { isShopBarcode, makeShopBarcode } from './labels.js'
+import { StickerPrinter } from './Stickers.jsx'
 
 const toCedis = (pesewas) => (Number.isInteger(pesewas) ? (pesewas / 100).toFixed(2) : '')
 
 // The one form. New products also take the stock already on the shelf.
 export function ProductForm({ product, barcode: scanned = '', onClose, onReceive, onSaved }) {
-  const { call, can, products } = useOps()
+  const { call, can, products, toast } = useOps()
   const now = useNow(60000)
   const isNew = !product
   const [form, setForm] = useState(() => ({
@@ -37,6 +40,7 @@ export function ProductForm({ product, barcode: scanned = '', onClose, onReceive
   }))
   const [camera, setCamera] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [photoBusy, setPhotoBusy] = useState(false)
   const [linked, setLinked] = useState(null) // an existing product (no barcode yet) chosen for the scanned barcode
   const [linkSearch, setLinkSearch] = useState('')
   const [deleting, setDeleting] = useState(false) // asked "are you sure?"
@@ -112,14 +116,37 @@ export function ProductForm({ product, barcode: scanned = '', onClose, onReceive
     <form className="product-form" onSubmit={save}>
       <section className="product-form-photo">
         <span className="product-form-art">{form.image ? <img src={form.image} alt="" referrerPolicy="no-referrer" /> : <Icon name="products" size={40} />}</span>
-        <label className="field"><span>Picture</span>
-          <select value={knownImage ? form.image : form.image ? 'custom' : ''} onChange={(event) => set({ image: event.target.value === 'custom' ? (knownImage ? '' : form.image) : event.target.value })}>
-            <option value="">No picture</option>
-            {PRODUCT_IMAGES.map((image) => <option key={image.src} value={image.src}>{image.label}</option>)}
-            <option value="custom">Another picture (paste a link)</option>
-          </select>
+        <label className={`btn secondary block ${photoBusy ? 'is-busy' : ''}`}>
+          <Icon name="camera" size={16} /> {photoBusy ? 'Uploading…' : form.image ? 'Change photo' : 'Take or upload a photo'}
+          <input type="file" accept="image/*" className="visually-hidden" disabled={photoBusy} onChange={async (event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (!file) return
+            setPhotoBusy(true)
+            try {
+              const image = await shrinkPhoto(file)
+              const result = await call('uploadProductPhoto', { image })
+              if (result?.url) set({ image: result.url })
+            } catch (error) {
+              toast(error.message, 'error')
+            } finally {
+              setPhotoBusy(false)
+            }
+          }} />
         </label>
-        {!knownImage && (form.image || form.image === '') ? <label className="field"><span>Picture link <em className="muted">optional</em></span><input value={form.image} onChange={(event) => set({ image: event.target.value.trim() })} placeholder="https://…" /></label> : null}
+        {form.image ? <button type="button" className="link-button small" onClick={() => set({ image: '' })}>Remove photo</button> : null}
+        <details className="product-form-more">
+          <summary>Use a shop picture or a link</summary>
+          <div className="stack">
+            <label className="field"><span>Shop picture</span>
+              <select value={knownImage ? form.image : ''} onChange={(event) => set({ image: event.target.value })}>
+                <option value="">None</option>
+                {PRODUCT_IMAGES.map((image) => <option key={image.src} value={image.src}>{image.label}</option>)}
+              </select>
+            </label>
+            <label className="field"><span>Picture link</span><input value={knownImage || form.image.startsWith('/photos/') ? '' : form.image} onChange={(event) => set({ image: event.target.value.trim() })} placeholder="https://…" /></label>
+          </div>
+        </details>
       </section>
 
       <section className="stack">
@@ -160,8 +187,12 @@ export function ProductForm({ product, barcode: scanned = '', onClose, onReceive
               onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault() }} placeholder="Click here, then scan the box" />
             <button type="button" className="btn secondary" onClick={() => setCamera(true)}><Icon name="camera" size={16} /> Camera</button>
           </span>
-          <small className="muted">With the USB scanner: click the box above, then scan the product. No barcode? Leave it empty and tap the product on the till.</small>
+          <small className="muted">With the USB scanner: click the box above, then scan the product. No barcode on the box? Make one and print stickers for it.</small>
         </label>
+        {!form.barcode ? <button type="button" className="btn ghost product-make-barcode" onClick={() => set({ barcode: makeShopBarcode(new Set(products.map((item) => item.setup?.barcode).filter(Boolean))) })}>
+          <Icon name="plus" size={16} /> Make a barcode for this product</button> : null}
+        {form.barcode && form.barcode === (product?.setup?.barcode || '') ? <StickerPrinter product={{ name: form.name, brand: form.brand, size: form.size, price: product.price }} barcode={form.barcode} defaultCopies={units || 1} />
+          : isShopBarcode(form.barcode) ? <p className="muted small">{isNew ? 'Add the product' : 'Save changes'}, then open it again to print stickers with this barcode.</p> : null}
 
         {isNew ? <fieldset className="product-form-stock">
           <legend>Stock you have now</legend>

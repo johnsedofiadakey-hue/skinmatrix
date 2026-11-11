@@ -155,6 +155,27 @@ describe('voids and returns', () => {
   })
 })
 
+describe('customer records', () => {
+  const customerDoc = async () => (await db.doc('customers/233241234567').get()).data()
+  it('remembers a customer by phone, adds up visits and takes back cancels and refunds', async () => {
+    await sell(STAFF, [{ productId: 'cream', quantity: 1 }], { customer: { name: 'Esi Mensah', phone: '024 123 4567' } })
+    const { sale } = await sell(STAFF, [{ productId: 'serum', quantity: 2 }], { customer: { name: '', phone: '+233 24 123 4567' } }, NOW + 1000)
+    let record = await customerDoc()
+    expect(record).toMatchObject({ name: 'Esi Mensah', phone: '024 123 4567', visits: 2, firstVisit: NOW, lastSaleId: sale.id })
+    const spent = record.totalSpent
+    expect(spent).toBe(30000 + sale.total)
+    await h.returnItems(ctx(MANAGER), { saleId: sale.id, lines: [{ productId: 'serum', quantity: 1 }], condition: 'resaleable', refundMethod: 'cash', reason: 'Changed mind' })
+    record = await customerDoc()
+    expect(record.totalSpent).toBe(spent - sale.total / 2)
+    await h.voidSale(ctx(MANAGER), { saleId: sale.id, reason: 'Wrong item' })
+    record = await customerDoc()
+    expect(record).toMatchObject({ visits: 1, totalSpent: 30000 })
+    // No phone: nothing is recorded.
+    await sell(STAFF, [{ productId: 'cream', quantity: 1 }], { customer: { name: 'Walk-in' } })
+    expect((await db.collection('customers').get()).size).toBe(1)
+  })
+})
+
 describe('website orders', () => {
   const order = (id, lines, status = 'new') => db.doc(`orders/${id}`).set({ ref: id, channel: 'website', status, customer: { name: 'Esi', phone: '024 123 4567', email: '' }, fulfilment: { method: 'delivery', address: 'East Legon', notes: '' }, lines, subtotal: 0, deliveryFee: null, total: 0, payment: { method: 'pay_later', status: 'unpaid', reference: null }, createdAt: new Date(NOW) })
 
@@ -429,6 +450,28 @@ describe('website checkout on the server', () => {
     const log = (await db.collection('smsLog').get()).docs.map((doc) => doc.data())
     expect(log.filter((row) => row.ok)).toHaveLength(2)
     expect(log.find((row) => !row.ok).error).toBe('network down')
+  })
+})
+
+describe('end-of-day text to the owner', () => {
+  it('texts takings by method and low stock when the day is closed, only when turned on', async () => {
+    const sent = []
+    const fetcher = async (url, init) => { sent.push(JSON.parse(init.body)); return { ok: true, status: 200, json: async () => ({ status: 'success', code: '2000' }) } }
+    const withSms = (uid) => ({ ...ctx(uid), secrets: { smsKey: 'mnotify-key-0000000' }, fetch: fetcher })
+    await sell(STAFF, [{ productId: 'cream', quantity: 4 }])
+    await sell(STAFF, [{ productId: 'serum', quantity: 1 }], { payment: { method: 'momo', received: 20000, reference: 'MM123456', network: 'MTN' } })
+    // Off: nothing is sent.
+    await settings.saveShopSettings(ctx(OWNER), { sms: { enabled: true, daySummary: false, ownerPhone: '024 765 4321' } })
+    await register.closeDay(withSms(MANAGER), { day: '2026-09-25' })
+    expect(sent).toHaveLength(0)
+    await settings.saveShopSettings(ctx(OWNER), { sms: { enabled: true, daySummary: true, ownerPhone: '0247654321' } })
+    const { report } = await register.closeDay(withSms(MANAGER), { allowOpenDrawers: true })
+    expect(sent).toHaveLength(1)
+    expect(sent[0].recipient).toEqual(['0247654321'])
+    expect(sent[0].message).toContain(`closed (${report.number})`)
+    expect(sent[0].message).toContain('Takings GHS 1400.00 from 2 sales')
+    expect(sent[0].message).toContain('Cash 1200.00, MoMo 200.00')
+    expect(sent[0].message).toContain('Moisturizing Cream (1)')
   })
 })
 

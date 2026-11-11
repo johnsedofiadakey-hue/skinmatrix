@@ -11,6 +11,7 @@ import { taxBreakdown } from './core/tax.js'
 import { readSettings } from './settings.js'
 import { addCash, readOpenShift, requireShift } from './shifts.js'
 import { sendSms, smsText } from './sms.js'
+import { customerKey, readCustomer, recordVisit, takeBack } from './customers.js'
 import { notifyCustomer } from './web.js'
 import { actorRef, approvalCheck, audit, checkRequestId, hashPin, movement, pad, readAvailability, readBatches, readCatalog, releaseDeductions, requireStaff, takeFromBatches, verifyApproval, writeBatch, writeStock } from './shared.js'
 
@@ -78,6 +79,7 @@ export async function completeSale(ctx, data, internal = {}) {
       }
       if (!shift) shift = requireShift(await readOpenShift(tx, db, uid))
     }
+    const regular = await readCustomer(tx, db, customerKey(customer))
 
     const deductions = takeFromBatches(batchesByProduct, items, now, products)
     const id = `S${pad(next)}`
@@ -98,6 +100,7 @@ export async function completeSale(ctx, data, internal = {}) {
     for (const deduction of deductions) movement(tx, db, now, staff, { productId: deduction.productId, batch: { id: deduction.batchId, lot: deduction.lot }, delta: -deduction.quantity, kind: 'sale', ref: id })
     writeStock(tx, db, batchesByProduct, availability, now)
     if (shift) addCash(tx, db, shift, { sale: total, late })
+    recordVisit(tx, db, regular, { name: customer?.name, phone: customer?.phone, total, at, saleId: id })
     const notes = [
       discount ? `Discount ${discount.reason}${approvedBy ? `, approved by ${approvedBy.name}` : ''}` : '',
       offline ? `Made offline, synced later${adjustment ? `; price changed while offline, ${adjustment > 0 ? 'customer paid' : 'customer overpaid by'} ${(Math.abs(adjustment) / 100).toFixed(2)} GHS${adjustment > 0 ? ' less than today’s price' : ''}` : ''}` : '',
@@ -149,6 +152,7 @@ export async function voidSale({ db, uid, now }, data) {
     const refund = sale.total - (sale.returns || []).reduce((sum, entry) => sum + entry.amount, 0)
     // Cash given back comes out of the drawer of whoever hands it over.
     const shift = sale.payment.method === 'cash' && refund > 0 ? requireShift(await readOpenShift(tx, db, uid)) : null
+    const regular = await readCustomer(tx, db, customerKey(sale.customer))
     for (const deduction of sale.deductions) {
       const batch = batchesByProduct.get(deduction.productId)?.find((candidate) => candidate.id === deduction.batchId)
       if (!batch) throw new RuleError('batch_missing', 'A batch this sale used no longer exists. Ask the developer.')
@@ -158,6 +162,7 @@ export async function voidSale({ db, uid, now }, data) {
     }
     writeStock(tx, db, batchesByProduct, availability, now)
     if (shift) addCash(tx, db, shift, { refund })
+    takeBack(tx, db, regular, { amount: refund, visit: true })
     const voided = { at: now, by: actorRef(staff), approvedBy, reason, refund, refundMethod: sale.payment.method }
     tx.update(saleRef, { status: 'voided', void: voided, deductions: [] })
     audit(tx, db, now, staff, 'void', sale.id, `Cancelled sale ${sale.number}; ${sale.deductions.reduce((sum, deduction) => sum + deduction.quantity, 0)} units back in stock`, `${reason}${approvedBy ? ` · approved by ${approvedBy.name}` : ''}`)
@@ -200,6 +205,7 @@ export async function returnItems({ db, uid, now }, data) {
     const batchesByProduct = await readBatches(tx, db, lines.map((line) => line.productId))
     const availability = await readAvailability(tx, db)
     const shift = refundMethod === 'cash' ? requireShift(await readOpenShift(tx, db, uid)) : null
+    const regular = await readCustomer(tx, db, customerKey(sale.customer))
     const already = (sale.returns || []).reduce((sum, entry) => sum + entry.amount, 0)
     const amount = Math.min(sale.total - already, lines.reduce((sum, line) => sum + returnValue(sale, line.productId, line.quantity), 0))
     const deductions = sale.deductions.map((deduction) => ({ ...deduction }))
@@ -216,6 +222,7 @@ export async function returnItems({ db, uid, now }, data) {
     }
     if (condition === 'resaleable') writeStock(tx, db, batchesByProduct, availability, now)
     if (shift && amount > 0) addCash(tx, db, shift, { refund: amount })
+    if (amount > 0) takeBack(tx, db, regular, { amount })
     const entry = { at: now, by: actorRef(staff), approvedBy, lines: lines.map(({ productId, quantity }) => ({ productId, quantity })), condition, amount, refundMethod, reference: reference || null, reason }
     tx.update(saleRef, { returns: [...(sale.returns || []), entry], deductions: deductions.filter((deduction) => deduction.quantity > 0) })
     audit(tx, db, now, staff, 'return', sale.id, `Return on sale ${sale.number}: ${lines.reduce((sum, line) => sum + line.quantity, 0)} unit(s), ${condition === 'resaleable' ? 'back on the shelf' : 'damaged'}`, `${reason}${approvedBy ? ` · approved by ${approvedBy.name}` : ''}`)

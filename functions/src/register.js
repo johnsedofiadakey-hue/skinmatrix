@@ -5,6 +5,9 @@ import { summarizeDay, zNumber } from './core/zreport.js'
 import { businessDay, isDate } from './core/time.js'
 import { actorRef, audit, checkRequestId, requireStaff } from './shared.js'
 import { readOpenShift } from './shifts.js'
+import { readSettings } from './settings.js'
+import { daySummaryText, lowStock, sendSms } from './sms.js'
+import { logger } from 'firebase-functions'
 
 // The drawer was opened without a sale (change for a customer, checking a note…). Every opening is logged with
 // a reason and counted on the cashier's open drawer. The till can open the drawer offline and send this later,
@@ -32,12 +35,13 @@ export async function recordNoSale({ db, uid, now }, data) {
 // Closes a business day: records the Z report (numbered Z0001, Z0002…) from that day's sales and drawers.
 // A day can be closed once. Drawers still open are listed as open; the manager confirms that first.
 // data: { day?, note?, allowOpenDrawers? }
-export async function closeDay({ db, uid, now }, data) {
+export async function closeDay(ctx, data) {
+  const { db, uid, now } = ctx
   const staff = await requireStaff(db, uid, 'reports')
   const day = data?.day === undefined ? businessDay(now) : String(data.day)
   if (!isDate(day) || day > businessDay(now)) throw new RuleError('bad_day', 'Choose today or an earlier day.')
   const note = String(data?.note ?? '').trim().slice(0, 300)
-  return db.runTransaction(async (tx) => {
+  const result = await db.runTransaction(async (tx) => {
     const reportRef = db.doc(`zReports/${day}`)
     const existing = await tx.get(reportRef)
     if (existing.exists) throw new RuleError('day_closed', `This day is already closed (${existing.data().number}). You can reprint it from Reports.`)
@@ -55,6 +59,21 @@ export async function closeDay({ db, uid, now }, data) {
     audit(tx, db, now, staff, 'zreport', day, `Closed the day ${day} (${report.number}): takings ${(report.net / 100).toFixed(2)} GHS`, note)
     return { report }
   })
+  await textDaySummary(ctx, result.report)
+  return result
+}
+
+// Texts the closed day's figures to the owner when that is turned on (Settings → Text messages). Never fails the close.
+async function textDaySummary(ctx, report) {
+  try {
+    const settings = await readSettings(ctx.db)
+    if (!settings.sms.enabled || !settings.sms.daySummary || !settings.sms.ownerPhone) return
+    const shop = (await ctx.db.doc('site/content').get()).data()?.shop || {}
+    const text = daySummaryText({ shopName: shop.legalName || 'SkinMatrix', report, low: await lowStock(ctx.db, ctx.now) })
+    await sendSms(ctx, settings, { to: settings.sms.ownerPhone, kind: 'day_summary', ref: report.day, text })
+  } catch (error) {
+    logger.warn('Day summary not texted', { error: String(error?.message || error) })
+  }
 }
 
 export const canCloseDay = (role) => can(role, 'reports')

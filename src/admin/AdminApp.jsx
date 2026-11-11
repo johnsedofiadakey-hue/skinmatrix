@@ -13,6 +13,7 @@ import WebsiteOrders, { needsAction, useWebOrders } from './views/WebsiteOrders.
 
 // Pages used less often load when first opened, so the till starts quickly.
 const Sales = lazy(() => import('./views/Sales.jsx'))
+const Customers = lazy(() => import('./views/Customers.jsx'))
 const Drawer = lazy(() => import('./views/Drawer.jsx'))
 const Stock = lazy(() => import('./views/Stock.jsx'))
 const Reports = lazy(() => import('./views/Reports.jsx'))
@@ -30,6 +31,7 @@ const PAGES = [
   { path: 'sell', label: 'POS', icon: 'pos', action: 'sell', tab: true },
   { path: 'sales', label: 'POS history', short: 'History', icon: 'sale', action: 'viewSales', tab: true },
   { path: 'orders', label: 'Website orders', short: 'Web orders', icon: 'cart', action: 'webOrders', tab: true },
+  { path: 'customers', label: 'Customers', icon: 'user', action: 'viewSales' },
   { path: 'drawer', label: 'Cash drawer', icon: 'drawer', action: 'sell' },
   { path: 'stock', label: 'Stock', icon: 'inventory', action: 'viewStock' },
   { path: 'reports', label: 'Reports', icon: 'ledger', action: 'reports' },
@@ -110,6 +112,7 @@ function Shell() {
   else if (section === 'sell') page = <Sell />
   else if (section === 'sales') page = <Sales />
   else if (section === 'orders') page = <WebsiteOrders />
+  else if (section === 'customers') page = <Customers />
   else if (section === 'drawer') page = <Drawer />
   else if (section === 'stock') page = <Stock tab={sub} />
   else if (section === 'reports') page = <Reports />

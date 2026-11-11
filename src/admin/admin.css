@@ -517,6 +517,8 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
   .print-area .receipt-meta, .print-area .receipt-foot, .print-area .receipt-tax { color: #000; font-size: 10.5px; border-color: #000; }
   .print-area .receipt-void { color: #000; border-color: #000; }
   .print-area small { font-size: 10px; }
+  .print-area .sticker { width: 72mm; break-after: page; page-break-after: always; border: 0; padding: 0 0 2mm; }
+  .print-area .sticker:last-child { break-after: auto; page-break-after: auto; }
   .print-area .text-slip { margin: 0; width: 72mm; font: 10.5px/1.3 'Courier New', ui-monospace, monospace; color: #000; white-space: pre-wrap; }
 }
 
@@ -551,3 +553,25 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
 .product-form-add { flex-basis: 100%; }
 .product-delete { border-top: 1px solid var(--line); padding-top: 12px; }
 .product-delete .callout .row { flex-basis: 100%; justify-content: flex-end; }
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.product-form-photo label.btn { position: relative; cursor: pointer; }
+.product-form-photo label.btn.is-busy { opacity: .7; pointer-events: none; }
+
+/* Barcode stickers (src/admin/pos/Stickers.jsx) */
+.product-make-barcode { align-self: flex-start; }
+.sticker-printer { align-items: flex-end; gap: 10px; }
+.sticker-printer .field { width: 96px; }
+.sticker { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; color: #000; background: #fff; font: 12px/1.3 'Inter', Arial, sans-serif; }
+.sticker-shop { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+.sticker-name { font-weight: 600; }
+.sticker-price { font-size: 18px; }
+.sticker-barcode { width: 46mm; height: auto; margin-top: 2px; }
+
+/* Customers (src/admin/views/Customers.jsx) */
+.customer-list, .customer-sales { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.customer-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.customer-row:hover { border-color: var(--line-2); }
+.customer-row .grow, .customer-sales .grow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.customer-initial { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: var(--surface-2); }
+.customer-sales li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.pos-customer-known { margin: 0; }

@@ -58,7 +58,7 @@ const TOPICS = [
       'A product already in the shop but without a barcode: scan its box on the Products page, then under “Already in the shop without a barcode?” tap it. The barcode is saved on it, and you can type how many to add to stock in the same form.',
       'A new box at the till during a sale: a manager or owner can scan it and add the product right there; it goes straight into the sale. Cashiers see a message to ask a manager.',
       'Receive stock: scan each box, type how many and the expiry month. A box the shop does not know opens “New product”.',
-      'A product with no barcode: Products → tap it → click the barcode box → scan, or leave it empty and sell it by name.',
+      'A product with no barcode (local products, gift sets): Products → tap it → “Make a barcode for this product” → Save changes. Open it again, choose how many stickers and press Print stickers. They come out of the receipt printer, cut one by one. Stick one on each item and it scans like any other box.',
       'Deleting a product (owner only): Products → tap it → More options → Delete this product. A product with stock left must have its count set to 0 first. Past sales keep it. To keep a product but hide it from customers, untick “Show on the website” instead.',
     ],
   },
@@ -105,11 +105,14 @@ const TOPICS = [
       'Open Reports → Today. Count the cash drawer; it should match “Cash in the drawer”.',
       'Check the MoMo total against the shop MoMo statement.',
       'Print the day summary and file it.',
+      'When you close the day, the owner can get the takings by text message: Settings → Text messages → “Text me the day’s takings”, then type the phone number.',
     ],
   },
   {
     id: 'owner', title: 'Owner: products, team and website', owner: true, steps: [
       'New product: Products → Add a product. One form: photo, name, price, cost, barcode (scan it) and how many you have now. Turn off “Show on website” for shop-only items.',
+      'Product photo: in the product form press “Take or upload a photo”. On a phone or tablet it opens the camera; on a computer choose a picture. It is made smaller automatically and shows on the website and the till.',
+      'Customers: More → Customers lists everyone whose phone number was typed on a sale, with visits, total spent and what they bought. On the POS, press Customer and type the number: a returning customer’s name fills in.',
       'New stock arriving: Products → Receive stock. Scan each box (each scan adds one), choose the expiry month, then Add to stock.',
       'New staff: Team → Add a person. Choose their username (for example ama) and a password, and tell them both. They sign in with just those.',
       'Staff forgot their password: Team → tap them → set a new password.',

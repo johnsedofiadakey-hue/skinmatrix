@@ -8,6 +8,13 @@
     ],
     "rewrites": [
       {
+        "source": "/photos/**",
+        "function": {
+          "functionId": "productPhoto",
+          "region": "europe-west2"
+        }
+      },
+      {
         "source": "/admin",
         "destination": "/admin/index.html"
       },

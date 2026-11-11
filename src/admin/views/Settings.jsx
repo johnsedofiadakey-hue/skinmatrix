@@ -4,6 +4,7 @@ import { liveDb } from '../live/firebase.js'
 import { useNow, useOps } from '../hooks.js'
 import { formatMoney } from '../lib/money.js'
 import { percentLabel, taxBreakdown } from '../../../functions/src/core/tax.js'
+import { normalizePhone } from '../../../functions/src/core/sale.js'
 import { Card, Empty, Pill } from '../components/ui.jsx'
 import { Guide } from '../components/guide.jsx'
 import { fmtWhen } from '../components/format.js'
@@ -62,7 +63,7 @@ function SettingsForm({ settings }) {
         </> : <p className="muted small">Receipts show no tax lines.</p>}
       </div>
     </Card>
-    <Card title="Text messages (SMS) to customers">
+    <Card title="Text messages (SMS)">
       <div className="stack">
         <label className="check"><input type="checkbox" checked={sms.enabled} onChange={(event) => setSms({ ...sms, enabled: event.target.checked })} /> Send text messages</label>
         {sms.enabled ? <>
@@ -70,11 +71,14 @@ function SettingsForm({ settings }) {
           <label className="check"><input type="checkbox" checked={sms.orderPlaced} onChange={(event) => setSms({ ...sms, orderPlaced: event.target.checked })} /> Website order received (and online payment received)</label>
           <label className="check"><input type="checkbox" checked={sms.orderUpdates} onChange={(event) => setSms({ ...sms, orderUpdates: event.target.checked })} /> Website order confirmed, ready, on the way or cancelled</label>
           <label className="check"><input type="checkbox" checked={sms.saleReceipt} onChange={(event) => setSms({ ...sms, saleReceipt: event.target.checked })} /> Receipt for shop sales when the cashier types the customer’s phone</label>
+          <label className="check"><input type="checkbox" checked={sms.daySummary} onChange={(event) => setSms({ ...sms, daySummary: event.target.checked })} /> Text me the day’s takings when the day is closed (Reports → Close the day)</label>
+          {sms.daySummary ? <label className="field"><span>Send the day’s takings to</span><input inputMode="tel" placeholder="024 123 4567" value={sms.ownerPhone} maxLength={20} onChange={(event) => setSms({ ...sms, ownerPhone: event.target.value })} />
+            {sms.ownerPhone && !normalizePhone(sms.ownerPhone) ? <small className="bad-text">Type a Ghana number with 10 digits, like 024 123 4567.</small> : <small className="muted">Takings by cash, MoMo and card, refunds, cancelled sales, drawer differences and products running low.</small>}</label> : null}
           <p className="muted small">Each message costs a little mNotify credit. If a message fails, the order or sale still goes through; failures show below.</p>
         </> : null}
       </div>
     </Card>
-    <button type="submit" className="btn primary block large" disabled={!ratesValid || busy}>{busy ? 'Saving…' : 'Save settings'}</button>
+    <button type="submit" className="btn primary block large" disabled={!ratesValid || busy || (sms.enabled && sms.daySummary && !normalizePhone(sms.ownerPhone))}>{busy ? 'Saving…' : 'Save settings'}</button>
     <SmsLog />
   </form>
 }

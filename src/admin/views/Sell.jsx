@@ -7,7 +7,9 @@ import { useNow, useOps } from '../hooks.js'
 import { formatMoney, parseCedis } from '../lib/money.js'
 import { DISCOUNT_LIMIT, MOMO_NETWORKS, ROLE_LABEL } from '../../../functions/src/core/rules.js'
 import { expiryStatus, sellableFromSummary } from '../../../functions/src/core/stock.js'
-import { discountNeedsApproval } from '../../../functions/src/core/sale.js'
+import { discountNeedsApproval, normalizePhone } from '../../../functions/src/core/sale.js'
+import { doc, getDoc } from 'firebase/firestore'
+import { liveDb } from '../live/firebase.js'
 import { taxBreakdown } from '../../../functions/src/core/tax.js'
 import { isConnectionProblem } from '../live/offlineSales.js'
 import { tillWarnings } from '../live/risks.js'
@@ -607,11 +609,27 @@ function DiscountDialog({ subtotal, value, role, onClose, onSave }) {
 
 function CustomerDialog({ value, onClose, onSave }) {
   const [form, setForm] = useState(value)
+  const [known, setKnown] = useState(null) // the customer record for the typed number, when the shop has one
+  const key = normalizePhone(form.phone)
+  // A returning customer: their name fills in from the number (customers/{phone}, kept by the server with each sale).
+  useEffect(() => {
+    setKnown(null)
+    if (!key) return undefined
+    let live = true
+    getDoc(doc(liveDb, 'customers', key)).then((snap) => {
+      if (!live || !snap.exists()) return
+      const record = snap.data()
+      setKnown(record)
+      setForm((current) => (current.name.trim() ? current : { ...current, name: record.name || '' }))
+    }).catch(() => {}) // offline: the cashier just types the name
+    return () => { live = false }
+  }, [key])
   return <Dialog title="Customer (optional)" onClose={onClose}>
     <form className="stack" onSubmit={(event) => { event.preventDefault(); onSave({ name: form.name.trim(), phone: form.phone.trim() }) }}>
-      <p className="muted small">Their name goes on the receipt. With a phone number you can send the receipt on WhatsApp.</p>
-      <label className="field"><span>Name</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={60} data-autofocus /></label>
-      <label className="field"><span>Phone</span><input inputMode="tel" placeholder="024 123 4567" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} maxLength={20} /></label>
+      <p className="muted small">Type their phone number: a returning customer’s name fills in. The name goes on the receipt, and the sale is added to their history (More → Customers).</p>
+      <label className="field"><span>Phone</span><input inputMode="tel" placeholder="024 123 4567" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} maxLength={20} data-autofocus /></label>
+      {known ? <p className="callout good small pos-customer-known" role="status"><Icon name="check" /> <span>Welcome back{known.name ? `, ${known.name}` : ''}: visit {known.visits + 1}, {formatMoney(known.totalSpent)} spent so far.</span></p> : null}
+      <label className="field"><span>Name</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={60} /></label>
       <div className="row end">
         {value.name || value.phone ? <button type="button" className="btn ghost" onClick={() => onSave(EMPTY_CUSTOMER)}>Remove</button> : null}
         <button type="submit" className="btn primary large">Save</button>

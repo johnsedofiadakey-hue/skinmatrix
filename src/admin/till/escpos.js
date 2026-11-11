@@ -7,6 +7,8 @@
 //      { pair: [left, right], bold, big }                    left and right text on one line
 //      { rule: '-' }                                         a line across the paper
 //      { feed: n }                                           n empty lines
+//      { barcode: '2012345678903' }                          a printed barcode (EAN-13, else CODE128) with digits below
+//      { cut: true }                                         feed and cut here (between stickers)
 import { formatMoney } from '../lib/money.js'
 import { percentLabel } from '../../../functions/src/core/tax.js'
 import { refundedAmount } from '../../../functions/src/core/sale.js'
@@ -20,6 +22,7 @@ export const COMMANDS = {
   boldOn: [ESC, 0x45, 1], boldOff: [ESC, 0x45, 0],
   bigOn: [GS, 0x21, 0x11], bigOff: [GS, 0x21, 0x00],
   feedAndCut: [ESC, 0x64, 4, GS, 0x56, 0x42, 0x00], // feed 4 lines, then partial cut
+  barcodeHeight: [GS, 0x68, 80], barcodeWidth: [GS, 0x77, 2], barcodeTextBelow: [GS, 0x48, 2],
   // Drawer kick on connector pin 2: pulse 50 ms on, 500 ms off. Most drawers (RJ11/RJ12 into the printer) use pin 2.
   kickPin2: [ESC, 0x70, 0x00, 0x19, 0xfa],
   kickPin5: [ESC, 0x70, 0x01, 0x19, 0xfa],
@@ -76,6 +79,21 @@ export function encode(ops, { width = 48, cut = true, kick = false, kickPin = 2 
   for (const op of ops) {
     if (op.rule) { push(COMMANDS.alignLeft); pushText(op.rule.repeat(width)); bytes.push(0x0a); continue }
     if (op.feed) { for (let i = 0; i < op.feed; i += 1) bytes.push(0x0a); continue }
+    if (op.cut) { push(COMMANDS.alignLeft); push(COMMANDS.feedAndCut); continue }
+    if (op.barcode) {
+      const digits = String(op.barcode).replace(/\D/g, '')
+      const ean = digits.length === 13 || digits.length === 12
+      const data = ean ? digits.slice(0, 12) : String(op.barcode).replace(/[^\x20-\x7e]/g, '')
+      push(COMMANDS.alignCenter)
+      push(COMMANDS.barcodeHeight); push(COMMANDS.barcodeWidth); push(COMMANDS.barcodeTextBelow)
+      // EAN-13 (function B, type 67): the printer adds the check digit itself. Anything else: CODE128 set B.
+      if (ean) { push([GS, 0x6b, 67, data.length]); pushText(data) } else {
+        const payload = `{B${data}`
+        push([GS, 0x6b, 73, payload.length]); pushText(payload)
+      }
+      bytes.push(0x0a)
+      continue
+    }
     const columns = op.big ? Math.floor(width / 2) : width
     push(op.align === 'center' ? COMMANDS.alignCenter : op.align === 'right' ? COMMANDS.alignRight : COMMANDS.alignLeft)
     if (op.bold) push(COMMANDS.boldOn)
@@ -99,6 +117,8 @@ export function toText(ops, width = 48) {
   return ops.flatMap((op) => {
     if (op.rule) return [op.rule.repeat(width)]
     if (op.feed) return Array(op.feed).fill('')
+    if (op.cut) return ['- - - - cut - - - -']
+    if (op.barcode) return [`||| ${op.barcode} |||`]
     const columns = op.big ? Math.floor(width / 2) : width
     return op.pair ? [pairLine(op.pair[0], op.pair[1], columns)] : wrap(op.text, columns)
   }).join('\n')
